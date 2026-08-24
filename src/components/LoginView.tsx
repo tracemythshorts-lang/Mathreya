@@ -1,4 +1,3 @@
-import { supabase } from "../lib/supabase";
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Lock, Mail, ArrowRight, Sparkles, User, ShieldCheck } from 'lucide-react';
@@ -23,44 +22,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess, onContinue
     e.preventDefault();
     triggerHapticFeedback("success");
 
-    if (activeTab === "register") {
-      const { error } = await supabase.auth.signUp({
-        email: emailOrPhone,
-        password: password,
-        options: {
-          data: {
-            full_name: name,
-            stage: stage,
-          },
-        },
-      });
-
-      if (error) {
-        alert(error.message);
-        return;
-      }
-
-      alert("Account created successfully. Please check your email and verify your account.");
-      return;
-    }
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: emailOrPhone,
-      password: password,
-    });
-
-    console.log(data);
-    console.log(error);
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
     onLoginSuccess({
-      name: data.user.user_metadata.full_name || "User",
-      email: data.user.email || "",
-      phone: "",
-      stage: (data.user.user_metadata.stage || "pregnancy_prenatal") as any,
+      name: name || "User",
+      email: emailOrPhone.includes('@') ? emailOrPhone : "user@mathreya.care",
+      phone: !emailOrPhone.includes('@') ? emailOrPhone : "+91 98765 43210",
+      stage: stage,
       isAuthenticated: true,
       faceAuthEnabled: false,
     });
