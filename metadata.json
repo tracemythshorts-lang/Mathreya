@@ -1,0 +1,6 @@
+{
+  "name": "Mathreya",
+  "description": "A care that feels like home - Comprehensive women's health, life-stage support & virtual mother ecosystem.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

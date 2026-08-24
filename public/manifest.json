@@ -1,0 +1,23 @@
+{
+  "short_name": "Mathreya",
+  "name": "Mathreya - Indian Women's & Maternal Health Sanctuary",
+  "description": "Empathetic maternal health, puberty guide, Virtual Amma AI companion, and partner sync platform.",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#FCFAF7",
+  "theme_color": "#8B3012",
+  "display": "standalone",
+  "orientation": "portrait",
+  "categories": ["medical", "health", "lifestyle"]
+}
