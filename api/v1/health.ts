@@ -16,21 +16,10 @@ export default async function handler(
   }
 
   try {
-    const endpoint = process.env.APPWRITE_ENDPOINT;
+    const { users } = createAppwriteServerClient();
 
-    if (!endpoint) {
-      throw new Error('APPWRITE_ENDPOINT is not configured');
-    }
-
-    const { client } = createAppwriteServerClient();
-
-    // Lightweight Appwrite request to verify backend connectivity.
-    const health = await client.call(
-      'GET',
-      new URL(
-        endpoint.endsWith('/') ? 'health' : `${endpoint}/health`,
-      ),
-    );
+    // Lightweight authenticated Appwrite request to verify backend connectivity.
+    await users.list();
 
     return res.status(200).json({
       success: true,
@@ -52,3 +41,4 @@ export default async function handler(
     });
   }
 }
+
