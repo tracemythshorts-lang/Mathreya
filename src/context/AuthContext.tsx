@@ -15,7 +15,7 @@ interface AuthContextType {
   error: string | null;
 
   // Actions
-  signupWithEmail: (name: string, dob: string, email: string, pass: string, stage: string, phone?: string) => Promise<void>;
+  signupWithEmail: (name: string, dob: string, email: string, pass: string, stage: string, phone?: string) => Promise<{ tokenUserId: string }>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   sendEmailOTP: (email: string) => Promise<TokenResult>;
   verifyEmailOTPOnly: (userId: string, otpCode: string) => Promise<void>;
@@ -71,28 +71,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkCurrentSession();
   }, []);
 
-  // 1. Appwrite Email Registration — creates account with name/email/password/phone
-  const signupWithEmail = async (name: string, dob: string, email: string, pass: string, stage: string, phone?: string) => {
+  // 1. Appwrite Email Registration — creates account with all data, then sends email OTP
+  // Returns tokenUserId needed for OTP verification step in the UI
+  const signupWithEmail = async (
+    name: string,
+    dob: string,
+    email: string,
+    pass: string,
+    stage: string,
+    phone?: string
+  ): Promise<{ tokenUserId: string }> => {
     try {
       setError(null);
       setStatus('loading');
 
-      // If there's an active OTP session from email verification, log it out first
-      // so account.create() can work cleanly
+      // Delete any lingering session first
       try { await account.deleteSession('current'); } catch {}
 
-      // Create Appwrite account with name, email, password
+      // 1. Create Appwrite account (name, email, password stored)
       const userId = ID.unique();
       await account.create(userId, email, pass, name);
 
-      // Create session
+      // 2. Create a password session so we can call updatePrefs
       await account.createEmailPasswordSession(email, pass);
-
-      // Get authenticated Appwrite user object
       const appwriteUser = await account.get();
       setAppwriteUserId(appwriteUser.$id);
 
-      // Store phone and dob in Appwrite preferences
+      // 3. Store phone, dob, stage in Appwrite Preferences
       try {
         await account.updatePrefs({
           phone: phone || '',
@@ -103,30 +108,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       try {
         localStorage.setItem(`mathreya_registered_${appwriteUser.$id}`, 'true');
-        localStorage.setItem(`mathreya_registered_${email}`, 'true');
       } catch {}
 
+      // 4. Send email OTP for verification — returns token with userId
+      const token = await account.createEmailToken(appwriteUser.$id, email);
+
+      // Set partial user (not yet authenticated — email unverified)
       const savedPhoto = localStorage.getItem('mathreya_user_face_photo') || undefined;
       const userProfile: UserProfile = {
-        name: name || appwriteUser.name,
-        email: email || appwriteUser.email,
+        name,
+        email,
         phone: phone || '',
         age: 26,
         stage: (stage as any) || 'pregnancy_prenatal',
         avatarUrl: savedPhoto,
         faceAuthEnabled: false,
-        isAuthenticated: true,
+        isAuthenticated: false,
         isFirstLogin: true,
         pregnancyWeek: 24,
         emergencyContactName: 'Dr. Priya Sharma (Sister / OB-GYN)',
         emergencyContactPhone: '+91 98111 22233',
         location: 'Bengaluru, Karnataka',
       };
-
       setUser(userProfile);
-      setStatus('authenticated');
+      // Keep status as loading until email is verified
+      setStatus('loading');
+
+      return { tokenUserId: token.userId };
     } catch (err: any) {
-      setError(err.message || 'Email registration failed on Appwrite.');
+      setError(err.message || 'Registration failed. Please try again.');
       setStatus('unauthenticated');
       throw err;
     }
@@ -191,14 +201,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 4. Verify Email OTP token only — confirms email ownership without creating the account
-  // The OTP session created here is temporary; it gets deleted in signupWithEmail before account.create()
+  // 4. Verify Email OTP after account creation — confirms email, marks as authenticated
   const verifyEmailOTPOnly = async (userId: string, otpCode: string) => {
     try {
       setError(null);
-      // Create a temporary session to verify the token
+      // Create session with the OTP token — this marks the email as verified in Appwrite
       await account.createSession(userId, otpCode);
-      // Session will be cleared in signupWithEmail before account.create()
+      // Email is now verified — set user as fully authenticated
+      setStatus('authenticated');
+      setUser((prev) => prev ? { ...prev, isAuthenticated: true } : prev);
     } catch (err: any) {
       setError(err.message || 'Invalid or expired Email OTP code.');
       throw err;

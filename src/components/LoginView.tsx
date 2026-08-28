@@ -28,17 +28,16 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const {
     signupWithEmail,
     loginWithEmail,
-    sendEmailOTP,
     verifyEmailOTPOnly,
     sendPasswordRecovery,
     setUserPhotoUrl,
     error: authError,
   } = useAuth();
 
-  // Top Tabs: ONLY 2 TABS ('login' | 'register')
+  // Top Tabs
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('register');
 
-  // Registration Form Fields
+  // Registration Form Fields — all start empty
   const [name, setName] = useState('');
   const [dob, setDob] = useState('');
   const [emailInput, setEmailInput] = useState('');
@@ -46,22 +45,18 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [password, setPassword] = useState('');
   const [stage, setStage] = useState<'pregnancy_prenatal' | 'puberty' | 'husband'>('pregnancy_prenatal');
 
-  // Email OTP States
-  const [emailOtpSent, setEmailOtpSent] = useState(false);
-  const [emailTokenUserId, setEmailTokenUserId] = useState<string | null>(null);
-  const [emailOtpCode, setEmailOtpCode] = useState('');
-  const [emailVerified, setEmailVerified] = useState(false);
-  const [emailOtpLoading, setEmailOtpLoading] = useState(false);
+  // Email OTP Modal — shown AFTER account is created
+  const [showEmailOtpModal, setShowEmailOtpModal] = useState(false);
+  const [otpTokenUserId, setOtpTokenUserId] = useState<string | null>(null);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
 
-  // Email OTP token userId stored for later account creation (no phone OTP needed)
-  const [emailOtpVerifiedUserId, setEmailOtpVerifiedUserId] = useState<string | null>(null);
-
-  // Recovery Modal State
+  // Password Recovery Modal
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoverySuccess, setRecoverySuccess] = useState(false);
 
-  // Security Verification Modal State (Face / Security Step after Signup / Login)
+  // Security Verification Modal (face / PIN) — shown after email verified or login
   const [showSecurityModal, setShowSecurityModal] = useState(false);
   const [pendingUser, setPendingUser] = useState<Partial<UserProfile> | null>(null);
   const [securityMode, setSecurityMode] = useState<'face' | 'pin'>('face');
@@ -70,22 +65,19 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  // General Loading & Local Error States
+  // General states
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // Video & Canvas refs for camera face verification
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Clean up camera stream on unmount
   useEffect(() => {
-    return () => {
-      stopCamera();
-    };
+    return () => { stopCamera(); };
   }, []);
 
+  // ── Camera helpers ────────────────────────────────────────────────────────
   const startCamera = async () => {
     setCameraError(null);
     try {
@@ -93,12 +85,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
       });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      if (videoRef.current) videoRef.current.srcObject = stream;
       setCameraActive(true);
-    } catch (err: any) {
-      setCameraError('Camera access unavailable. You can use Security PIN verification.');
+    } catch {
+      setCameraError('Camera access unavailable. Use Security PIN instead.');
       setCameraActive(false);
     }
   };
@@ -127,50 +117,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // 1. Handle Send Email OTP (just generates the token, does NOT create account)
-  const handleSendEmailOTP = async () => {
-    if (!emailInput || !emailInput.includes('@')) {
-      setLocalError('Please enter a valid email address first.');
-      return;
-    }
-    setEmailOtpLoading(true);
-    setLocalError(null);
-    try {
-      const tokenRes = await sendEmailOTP(emailInput);
-      setEmailTokenUserId(tokenRes.userId);
-      setEmailOtpSent(true);
-      triggerHapticFeedback('light');
-    } catch (err: any) {
-      setLocalError(err.message || 'Failed to send Email OTP.');
-    } finally {
-      setEmailOtpLoading(false);
-    }
-  };
-
-  // 2. Handle Validate Email OTP — only verifies the token, marks email as verified
-  // Account creation (with name/password/phone) happens later on form submit
-  const handleValidateEmailOTP = async () => {
-    if (!emailOtpCode || emailOtpCode.length < 4) {
-      setLocalError('Please enter the valid OTP code sent to your email.');
-      return;
-    }
-    setEmailOtpLoading(true);
-    setLocalError(null);
-    try {
-      if (!emailTokenUserId) throw new Error('OTP token expired. Please resend.');
-      // Verify the token to confirm email ownership — no account created yet
-      await verifyEmailOTPOnly(emailTokenUserId, emailOtpCode);
-      setEmailOtpVerifiedUserId(emailTokenUserId);
-      setEmailVerified(true);
-      triggerHapticFeedback('success');
-    } catch (err: any) {
-      setLocalError(err.message || 'Invalid Email OTP code.');
-    } finally {
-      setEmailOtpLoading(false);
-    }
-  };
-
-  // 5. Handle Primary Form Submission (Signup / Login)
+  // ── Register / Login submit ───────────────────────────────────────────────
+  // Register flow:
+  //   1. account.create(name, email, password)
+  //   2. account.updatePrefs({ phone, dob, stage })
+  //   3. account.createEmailToken → sends OTP to email
+  //   4. Show OTP verification modal
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     triggerHapticFeedback('success');
@@ -179,36 +131,24 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
     try {
       if (activeTab === 'register') {
-        // Validations
         if (!name.trim()) throw new Error('Please enter your full name.');
         if (!dob) throw new Error('Please enter your date of birth.');
-        if (!emailVerified) throw new Error('Please verify your email address with the OTP before creating your account.');
+        if (!emailInput || !emailInput.includes('@')) throw new Error('Please enter a valid email address.');
         if (!phoneInput.trim()) throw new Error('Please enter your mobile phone number.');
         if (!password || password.length < 8) throw new Error('Password must be at least 8 characters long.');
 
-        // Create Appwrite account with full details (name, email, password, phone stored in prefs)
-        await signupWithEmail(name, dob, emailInput, password, stage, phoneInput);
+        // Create account + store all data + send OTP → returns tokenUserId
+        const { tokenUserId } = await signupWithEmail(name, dob, emailInput, password, stage, phoneInput);
 
-        const userObj: Partial<UserProfile> = {
-          name,
-          email: emailInput,
-          phone: phoneInput,
-          stage,
-          isAuthenticated: true,
-        };
-        setPendingUser(userObj);
-        setShowSecurityModal(true);
-        startCamera();
+        setPendingUser({ name, email: emailInput, phone: phoneInput, stage, isAuthenticated: true });
+        setOtpTokenUserId(tokenUserId);
+        setOtpCode('');
+        setShowEmailOtpModal(true);
       } else {
-        // Sign In Flow (Email + Password)
-        if (!emailInput || !password) throw new Error('Please enter your registered email address and password.');
+        // Sign In: email + password
+        if (!emailInput || !password) throw new Error('Please enter your email address and password.');
         await loginWithEmail(emailInput, password);
-
-        const userObj: Partial<UserProfile> = {
-          email: emailInput,
-          isAuthenticated: true,
-        };
-        setPendingUser(userObj);
+        setPendingUser({ email: emailInput, isAuthenticated: true });
         setShowSecurityModal(true);
         startCamera();
       }
@@ -219,19 +159,41 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // 6. Complete Security Verification Step
+  // ── OTP Verification (after account creation) ─────────────────────────────
+  const handleVerifyOtp = async () => {
+    if (!otpCode || otpCode.length < 6) {
+      setLocalError('Please enter the complete 6-digit OTP sent to your email.');
+      return;
+    }
+    setOtpLoading(true);
+    setLocalError(null);
+    try {
+      if (!otpTokenUserId) throw new Error('OTP session expired. Please restart registration.');
+      await verifyEmailOTPOnly(otpTokenUserId, otpCode);
+      setShowEmailOtpModal(false);
+      setOtpCode('');
+      triggerHapticFeedback('success');
+      // Email verified → open security step
+      setShowSecurityModal(true);
+      startCamera();
+    } catch (err: any) {
+      setLocalError(err.message || 'Invalid OTP. Please check and try again.');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  // ── Security step completion ───────────────────────────────────────────────
   const handleCompleteSecurityStep = () => {
     if (securityMode === 'face' && capturedPhoto) {
       setUserPhotoUrl(capturedPhoto);
     }
     stopCamera();
     setShowSecurityModal(false);
-    if (pendingUser) {
-      onLoginSuccess(pendingUser);
-    }
+    if (pendingUser) onLoginSuccess(pendingUser);
   };
 
-  // Handle Forgot Password Recovery
+  // ── Password recovery ─────────────────────────────────────────────────────
   const handleSendRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -246,9 +208,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen w-full bg-[#FFF8F5] flex flex-col justify-between p-4 sm:p-8 select-none text-[#4D2D22]">
-      {/* 1. TOP BRAND HEADER */}
+    <div className="min-h-screen w-full bg-[#FFF8F5] flex flex-col p-4 sm:p-8 select-none text-[#4D2D22]">
+
+      {/* BRAND HEADER */}
       <motion.div
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -262,66 +226,55 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           />
         </div>
 
-        {/* 2-TAB SWITCH (SIGN IN / REGISTER ONLY) */}
-        <div className="flex bg-[#F7EAE2] p-1 rounded-2xl border border-[#EADCD1] max-w-xs mx-auto mt-2">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHapticFeedback('light');
-              setActiveTab('login');
-              setLocalError(null);
-            }}
-            className={`flex-1 py-2 rounded-xl text-xs font-serif font-extrabold transition cursor-pointer text-center ${
-              activeTab === 'login'
-                ? 'bg-[#B76A4B] text-white shadow-2xs'
-                : 'text-[#8B756A] hover:text-[#4D2D22]'
-            }`}
-          >
-            Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHapticFeedback('light');
-              setActiveTab('register');
-              setLocalError(null);
-            }}
-            className={`flex-1 py-2 rounded-xl text-xs font-serif font-extrabold transition cursor-pointer text-center ${
-              activeTab === 'register'
-                ? 'bg-[#B76A4B] text-white shadow-2xs'
-                : 'text-[#8B756A] hover:text-[#4D2D22]'
-            }`}
-          >
-            Register
-          </button>
+        {/* TAB SWITCH */}
+        <div className="flex bg-[#F7EAE2] p-1 rounded-2xl border border-[#EADCD1] max-w-xs mx-auto">
+          {(['login', 'register'] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => {
+                triggerHapticFeedback('light');
+                setActiveTab(tab);
+                setLocalError(null);
+              }}
+              className={`flex-1 py-2 rounded-xl text-xs font-serif font-extrabold transition cursor-pointer text-center ${
+                activeTab === tab
+                  ? 'bg-[#B76A4B] text-white shadow-2xs'
+                  : 'text-[#8B756A] hover:text-[#4D2D22]'
+              }`}
+            >
+              {tab === 'login' ? 'Sign In' : 'Register'}
+            </button>
+          ))}
         </div>
       </motion.div>
 
-      {/* ERROR DISPLAY */}
-      {(localError || authError) && (
-        <motion.div
-          initial={{ opacity: 0, y: -5 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="w-full max-w-md mx-auto my-2 bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3 rounded-2xl flex items-center gap-2"
-        >
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>{localError || authError}</span>
-        </motion.div>
-      )}
+      {/* ERROR BANNER */}
+      <AnimatePresence>
+        {(localError || authError) && (
+          <motion.div
+            initial={{ opacity: 0, y: -5, height: 0 }}
+            animate={{ opacity: 1, y: 0, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="w-full max-w-md mx-auto mt-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3 rounded-2xl flex items-center gap-2"
+          >
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{localError || authError}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* MAIN FORM */}
       <motion.form
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         onSubmit={handleFormSubmit}
-        className="w-full max-w-md mx-auto space-y-3.5 mt-2 mb-4"
+        className="w-full max-w-md mx-auto space-y-3.5 mt-4"
       >
         {activeTab === 'register' ? (
-          /* ========================================================================= */
-          /* REGISTER FORM (SINGLE UNIFIED SECTION)                                    */
-          /* ========================================================================= */
+          /* ─── REGISTER FORM ─────────────────────────────────────────────── */
           <>
-            {/* 1. FULL NAME (MANDATORY) */}
+            {/* 1. Full Name */}
             <div>
               <label className="block text-xs font-bold text-[#8B756A] mb-1">
                 Full Name <span className="text-rose-500">*</span>
@@ -333,13 +286,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full px-4 py-3 rounded-2xl bg-white border border-[#EADCD1] text-xs sm:text-sm text-[#4D2D22] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] font-medium shadow-2xs"
-                  placeholder="Enter full name"
+                  placeholder="Enter your full name"
                 />
                 <User className="w-4 h-4 text-[#8B756A] absolute right-3.5 top-3.5" />
               </div>
             </div>
 
-            {/* 2. DATE OF BIRTH (MANDATORY) */}
+            {/* 2. Date of Birth */}
             <div>
               <label className="block text-xs font-bold text-[#8B756A] mb-1">
                 Date of Birth <span className="text-rose-500">*</span>
@@ -356,78 +309,28 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               </div>
             </div>
 
-            {/* 3. EMAIL ADDRESS + INTEGRATED SEND OTP & VALIDATE (MANDATORY) */}
+            {/* 3. Email Address */}
             <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-xs font-bold text-[#8B756A]">
-                  Email Address <span className="text-rose-500">*</span>
-                </label>
-                {emailVerified ? (
-                  <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Email Verified
-                  </span>
-                ) : (
-                  <span className="text-[10px] font-bold text-amber-700">Mandatory Verification</span>
-                )}
+              <label className="block text-xs font-bold text-[#8B756A] mb-1">
+                Email Address <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  required
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  className="w-full px-4 py-3 rounded-2xl bg-white border border-[#EADCD1] text-xs sm:text-sm text-[#4D2D22] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] font-medium shadow-2xs"
+                  placeholder="your@email.com"
+                />
+                <Mail className="w-4 h-4 text-[#8B756A] absolute right-3.5 top-3.5" />
               </div>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="email"
-                    required
-                    disabled={emailVerified}
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    className="w-full px-4 py-3 rounded-2xl bg-white border border-[#EADCD1] text-xs sm:text-sm text-[#4D2D22] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] font-medium shadow-2xs disabled:bg-stone-100"
-                    placeholder="ananya.sharma@example.com"
-                  />
-                  <Mail className="w-4 h-4 text-[#8B756A] absolute right-3.5 top-3.5" />
-                </div>
-                {!emailVerified && (
-                  <button
-                    type="button"
-                    onClick={handleSendEmailOTP}
-                    disabled={emailOtpLoading}
-                    className="px-3.5 py-3 bg-[#F7EAE2] hover:bg-[#EADCD1] text-[#B76A4B] border border-[#EADCD1] text-xs font-bold rounded-2xl transition cursor-pointer shrink-0"
-                  >
-                    {emailOtpLoading ? 'Sending...' : emailOtpSent ? 'Resend OTP' : 'Send OTP'}
-                  </button>
-                )}
-              </div>
-
-              {/* Email OTP Text Box & Validate Button */}
-              {emailOtpSent && !emailVerified && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="mt-2 p-3 bg-amber-50/80 border border-amber-200 rounded-2xl space-y-2"
-                >
-                  <label className="block text-[11px] font-bold text-amber-900">
-                    Enter 6-digit Email OTP sent to {emailInput}
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={emailOtpCode}
-                      onChange={(e) => setEmailOtpCode(e.target.value)}
-                      className="flex-1 px-3 py-2 rounded-xl bg-white border border-amber-300 text-xs font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-[#B76A4B]"
-                      placeholder="123456"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleValidateEmailOTP}
-                      disabled={emailOtpLoading}
-                      className="px-4 py-2 bg-[#B76A4B] hover:bg-[#A05A3B] text-white text-xs font-bold rounded-xl transition cursor-pointer"
-                    >
-                      {emailOtpLoading ? 'Validating...' : 'Validate OTP'}
-                    </button>
-                  </div>
-                </motion.div>
-              )}
+              <p className="text-[10px] text-[#8B756A] mt-1 ml-1">
+                A 6-digit verification OTP will be sent to this email after account creation.
+              </p>
             </div>
 
-            {/* 4. PHONE NUMBER (MANDATORY, NO OTP) */}
+            {/* 4. Phone Number (mandatory, no OTP) */}
             <div>
               <label className="block text-xs font-bold text-[#8B756A] mb-1">
                 Mobile Phone Number <span className="text-rose-500">*</span>
@@ -445,7 +348,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               </div>
             </div>
 
-            {/* 5. PASSWORD (MANDATORY WITH APPWRITE VALIDATION) */}
+            {/* 5. Password */}
             <div>
               <label className="block text-xs font-bold text-[#8B756A] mb-1">
                 Password <span className="text-rose-500">*</span>
@@ -458,13 +361,13 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-4 py-3 rounded-2xl bg-white border border-[#EADCD1] text-xs sm:text-sm text-[#4D2D22] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] font-medium shadow-2xs"
-                  placeholder="Min 8 characters (Appwrite requirement)"
+                  placeholder="Minimum 8 characters"
                 />
                 <Lock className="w-4 h-4 text-[#8B756A] absolute right-3.5 top-3.5" />
               </div>
             </div>
 
-            {/* 6. PRIMARY LIFE STAGE */}
+            {/* 6. Primary Life Stage */}
             <div>
               <label className="block text-xs font-bold text-[#8B756A] mb-1">Primary Life Stage</label>
               <select
@@ -472,26 +375,23 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 onChange={(e) => setStage(e.target.value as any)}
                 className="w-full px-4 py-3 rounded-2xl bg-white border border-[#EADCD1] text-xs sm:text-sm text-[#4D2D22] focus:outline-none font-medium shadow-2xs"
               >
-                <option value="pregnancy_prenatal">Pregnancy & Maternity Care</option>
-                <option value="puberty">Puberty & Cycle Guide</option>
+                <option value="pregnancy_prenatal">Pregnancy &amp; Maternity Care</option>
+                <option value="puberty">Puberty &amp; Cycle Guide</option>
                 <option value="husband">Partner Sync Hub</option>
               </select>
             </div>
 
-            {/* CREATE ACCOUNT SUBMIT BUTTON */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 px-4 bg-[#B76A4B] hover:bg-[#A05A3B] text-white font-serif font-extrabold rounded-2xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-95 mt-2"
+              className="w-full py-3.5 px-4 bg-[#B76A4B] hover:bg-[#A05A3B] disabled:opacity-60 text-white font-serif font-extrabold rounded-2xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-95 mt-2"
             >
               <span>{loading ? 'Creating Account...' : 'Create Account'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </>
         ) : (
-          /* ========================================================================= */
-          /* SIGN IN FORM (EMAIL & PASSWORD)                                           */
-          /* ========================================================================= */
+          /* ─── SIGN IN FORM ───────────────────────────────────────────────── */
           <>
             <div>
               <label className="block text-xs font-bold text-[#8B756A] mb-1">Email Address</label>
@@ -502,7 +402,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   value={emailInput}
                   onChange={(e) => setEmailInput(e.target.value)}
                   className="w-full px-4 py-3 rounded-2xl bg-white border border-[#EADCD1] text-xs sm:text-sm text-[#4D2D22] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] font-medium shadow-2xs"
-                  placeholder="ananya.sharma@example.com"
+                  placeholder="your@email.com"
                 />
                 <Mail className="w-4 h-4 text-[#8B756A] absolute right-3.5 top-3.5" />
               </div>
@@ -513,7 +413,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <label className="block text-xs font-bold text-[#8B756A]">Password</label>
                 <button
                   type="button"
-                  onClick={() => setShowRecoveryModal(true)}
+                  onClick={() => { setShowRecoveryModal(true); setLocalError(null); }}
                   className="text-[11px] font-bold text-[#B76A4B] hover:underline cursor-pointer"
                 >
                   Forgot password?
@@ -526,7 +426,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-4 py-3 rounded-2xl bg-white border border-[#EADCD1] text-xs sm:text-sm text-[#4D2D22] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] font-medium shadow-2xs"
-                  placeholder="Enter secure password"
+                  placeholder="Enter your password"
                 />
                 <Lock className="w-4 h-4 text-[#8B756A] absolute right-3.5 top-3.5" />
               </div>
@@ -535,7 +435,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3.5 px-4 bg-[#B76A4B] hover:bg-[#A05A3B] text-white font-serif font-extrabold rounded-2xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-95 mt-2"
+              className="w-full py-3.5 px-4 bg-[#B76A4B] hover:bg-[#A05A3B] disabled:opacity-60 text-white font-serif font-extrabold rounded-2xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md cursor-pointer active:scale-95 mt-2"
             >
               <span>{loading ? 'Authenticating...' : 'Sign In'}</span>
               <ArrowRight className="w-4 h-4" />
@@ -544,7 +444,84 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         )}
       </motion.form>
 
-      {/* SECURITY VERIFICATION MODAL (FACE / DEVICE PASSWORD STEP AFTER REGISTER & LOGIN) */}
+      {/* FOOTER */}
+      <div className="w-full max-w-md mx-auto text-center mt-6 mb-2">
+        <p className="text-[10px] text-[#8B756A] flex items-center justify-center gap-1.5">
+          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+          Safe &amp; Encrypted Authentication
+        </p>
+      </div>
+
+      {/* ─── EMAIL OTP VERIFICATION MODAL ─────────────────────────────────── */}
+      {/* Appears after account creation — user verifies email before dashboard */}
+      <AnimatePresence>
+        {showEmailOtpModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/70 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="bg-white max-w-sm w-full rounded-3xl p-6 shadow-2xl border border-[#F0E8DD] space-y-4 text-[#3D251E]"
+            >
+              <div className="text-center space-y-2">
+                <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto border border-amber-200">
+                  <Mail className="w-7 h-7 text-amber-600" />
+                </div>
+                <h3 className="text-base font-serif font-extrabold text-[#5E2211]">Verify Your Email</h3>
+                <p className="text-xs text-stone-600 leading-relaxed">
+                  Account created! A 6-digit OTP has been sent to<br />
+                  <span className="font-bold text-[#B76A4B]">{emailInput}</span>
+                </p>
+                <p className="text-[10px] text-stone-400">Check your spam folder if not received.</p>
+              </div>
+
+              {localError && (
+                <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3 rounded-xl flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{localError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold text-[#8B756A] mb-1.5">Enter 6-digit OTP</label>
+                <input
+                  id="email-otp-input"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => {
+                    setLocalError(null);
+                    setOtpCode(e.target.value.replace(/\D/g, ''));
+                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleVerifyOtp(); }}
+                  className="w-full px-4 py-3.5 rounded-2xl bg-[#FCFAF7] border border-[#EAE0D2] text-center font-mono text-2xl font-bold tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] text-[#4D2D22]"
+                  placeholder="──────"
+                  autoFocus
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleVerifyOtp}
+                disabled={otpLoading || otpCode.length < 6}
+                className="w-full py-3.5 bg-[#B76A4B] hover:bg-[#A05A3B] disabled:opacity-50 text-white font-serif font-extrabold rounded-2xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
+              >
+                {otpLoading ? (
+                  <span>Verifying...</span>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Verify Email &amp; Continue</span>
+                  </>
+                )}
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── SECURITY VERIFICATION MODAL ──────────────────────────────────── */}
       <AnimatePresence>
         {showSecurityModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/70 backdrop-blur-md">
@@ -557,10 +534,10 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <div className="flex justify-between items-center border-b border-stone-100 pb-3">
                 <h3 className="text-base font-serif font-extrabold text-[#5E2211] flex items-center gap-2">
                   <ShieldCheck className="w-5 h-5 text-[#C85A32]" />
-                  {activeTab === 'register' ? 'Enroll Device Security & Face' : 'Verify Security Identity'}
+                  {activeTab === 'register' ? 'Enroll Device Security' : 'Verify Security Identity'}
                 </h3>
                 <span className="text-[10px] font-bold bg-[#FFF5ED] text-[#8B3012] px-2.5 py-1 rounded-full border border-[#F4D9CC]">
-                  Step 2 of 2
+                  {activeTab === 'register' ? 'Step 3 of 3' : 'Step 2 of 2'}
                 </span>
               </div>
 
@@ -568,10 +545,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               <div className="flex bg-[#F7EAE2] p-1 rounded-xl border border-[#EADCD1]">
                 <button
                   type="button"
-                  onClick={() => {
-                    setSecurityMode('face');
-                    if (!cameraActive) startCamera();
-                  }}
+                  onClick={() => { setSecurityMode('face'); if (!cameraActive) startCamera(); }}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                     securityMode === 'face' ? 'bg-white text-[#B76A4B] shadow-2xs' : 'text-[#8B756A]'
                   }`}
@@ -580,10 +554,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    setSecurityMode('pin');
-                    stopCamera();
-                  }}
+                  onClick={() => { setSecurityMode('pin'); stopCamera(); }}
                   className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
                     securityMode === 'pin' ? 'bg-white text-[#B76A4B] shadow-2xs' : 'text-[#8B756A]'
                   }`}
@@ -596,8 +567,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <div className="space-y-3 text-center">
                   <p className="text-xs text-stone-600 font-medium">
                     {capturedPhoto
-                      ? 'Face capture verified successfully! Your avatar photo is ready.'
-                      : 'Position your face clearly in the camera view below.'}
+                      ? 'Face captured! Your photo will be used as your profile avatar.'
+                      : 'Position your face in the camera view below.'}
                   </p>
 
                   <div className="relative w-48 h-48 mx-auto rounded-3xl overflow-hidden border-4 border-[#B76A4B]/20 bg-stone-100 flex items-center justify-center shadow-inner">
@@ -631,7 +602,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                     <button
                       type="button"
                       onClick={capturePhoto}
-                      className="px-4 py-2 bg-[#B76A4B] hover:bg-[#A05A3B] text-white font-bold rounded-xl text-xs flex items-center gap-2 mx-auto cursor-pointer shadow-xs"
+                      className="px-4 py-2 bg-[#B76A4B] hover:bg-[#A05A3B] text-white font-bold rounded-xl text-xs flex items-center gap-2 mx-auto cursor-pointer"
                     >
                       <Camera className="w-4 h-4" /> Capture Face Photo
                     </button>
@@ -640,10 +611,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                   {capturedPhoto && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setCapturedPhoto(null);
-                        startCamera();
-                      }}
+                      onClick={() => { setCapturedPhoto(null); startCamera(); }}
                       className="text-xs text-[#B76A4B] font-bold hover:underline flex items-center gap-1 mx-auto cursor-pointer"
                     >
                       <RefreshCw className="w-3 h-3" /> Retake Photo
@@ -654,7 +622,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 <div className="space-y-3">
                   <p className="text-xs text-stone-600 font-medium">
                     {activeTab === 'register'
-                      ? 'Set a 4-digit Security PIN for your device access.'
+                      ? 'Set a 4-digit Security PIN to protect your account.'
                       : 'Enter your 4-digit Security PIN to verify login.'}
                   </p>
                   <div>
@@ -665,7 +633,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                       value={securityPin}
                       onChange={(e) => setSecurityPin(e.target.value)}
                       className="w-full px-4 py-3 rounded-2xl bg-[#FCFAF7] border border-[#EAE0D2] text-center font-mono text-lg font-bold tracking-widest focus:outline-none focus:border-[#B76A4B]"
-                      placeholder="1234"
+                      placeholder="••••"
                     />
                   </div>
                 </div>
@@ -676,7 +644,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 onClick={handleCompleteSecurityStep}
                 className="w-full py-3.5 bg-[#B76A4B] hover:bg-[#A05A3B] text-white font-serif font-extrabold rounded-2xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
               >
-                <span>Complete & Enter Sanctuary</span>
+                <span>Complete &amp; Enter Sanctuary</span>
                 <Sparkles className="w-4 h-4 text-amber-200" />
               </button>
             </motion.div>
@@ -684,7 +652,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         )}
       </AnimatePresence>
 
-      {/* PASSWORD RECOVERY MODAL */}
+      {/* ─── PASSWORD RECOVERY MODAL ──────────────────────────────────────── */}
       <AnimatePresence>
         {showRecoveryModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-md">
@@ -696,38 +664,48 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
             >
               <h3 className="text-lg font-serif font-bold text-[#5E2211]">Password Recovery</h3>
               <p className="text-xs text-stone-600 leading-relaxed">
-                Enter your registered email address to receive a password recovery link.
+                Enter your registered email to receive a password reset link.
               </p>
 
               {recoverySuccess ? (
                 <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs p-3 rounded-xl flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Recovery email sent! Check your inbox.</span>
+                  Recovery link sent! Check your inbox.
                 </div>
               ) : (
                 <form onSubmit={handleSendRecovery} className="space-y-3">
+                  {localError && (
+                    <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3 rounded-xl">
+                      {localError}
+                    </div>
+                  )}
                   <input
                     type="email"
                     required
                     value={recoveryEmail}
                     onChange={(e) => setRecoveryEmail(e.target.value)}
-                    placeholder="Enter registered email address"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-[#FCFAF7] border border-[#EAE0D2] text-xs focus:outline-none focus:border-[#C85A32]"
+                    className="w-full px-4 py-3 rounded-2xl bg-[#FCFAF7] border border-[#EAE0D2] text-xs text-[#4D2D22] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] font-medium"
+                    placeholder="your@email.com"
                   />
-                  <div className="flex gap-2">
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowRecoveryModal(false);
+                        setRecoveryEmail('');
+                        setRecoverySuccess(false);
+                        setLocalError(null);
+                      }}
+                      className="flex-1 py-2.5 rounded-2xl border border-[#EADCD1] text-xs font-bold text-[#8B756A] cursor-pointer hover:bg-stone-50 transition"
+                    >
+                      Cancel
+                    </button>
                     <button
                       type="submit"
                       disabled={loading}
-                      className="flex-1 py-2.5 bg-[#C85A32] text-white font-bold rounded-xl text-xs hover:bg-[#B34D29] transition cursor-pointer"
+                      className="flex-1 py-2.5 rounded-2xl bg-[#B76A4B] hover:bg-[#A05A3B] text-white text-xs font-bold cursor-pointer transition"
                     >
-                      Send Recovery Email
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowRecoveryModal(false)}
-                      className="py-2.5 px-4 bg-stone-100 text-stone-700 font-bold rounded-xl text-xs hover:bg-stone-200 transition cursor-pointer"
-                    >
-                      Cancel
+                      {loading ? 'Sending...' : 'Send Recovery Link'}
                     </button>
                   </div>
                 </form>
@@ -736,18 +714,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           </div>
         )}
       </AnimatePresence>
-
-      {/* FOOTER BADGE */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="w-full max-w-md mx-auto text-center pb-2 pt-1"
-      >
-        <p className="text-[10px] text-[#8B756A] font-medium flex items-center justify-center gap-1">
-          <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Safe & Encrypted Authentication
-        </p>
-      </motion.div>
     </div>
   );
 };
