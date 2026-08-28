@@ -110,6 +110,43 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ user, onNavigate }
     },
   ];
 
+  // Dynamic IST Greeting Calculation (Asia/Kolkata Time Zone)
+  const getISTGreeting = () => {
+    try {
+      const options: Intl.DateTimeFormatOptions = {
+        timeZone: 'Asia/Kolkata',
+        hour: 'numeric',
+        hour12: false,
+      };
+      const istHourStr = new Intl.DateTimeFormat('en-US', options).format(new Date());
+      const hour = parseInt(istHourStr, 10);
+
+      if (hour >= 4 && hour < 12) {
+        return 'Shubhodaya • Good Morning';
+      } else if (hour >= 12 && hour < 17) {
+        return 'Shubha Madhyanha • Good Afternoon';
+      } else if (hour >= 17 && hour < 21) {
+        return 'Shubha Sandhya • Good Evening';
+      } else {
+        return 'Shubha Rathri • Good Night';
+      }
+    } catch {
+      const hour = new Date().getHours();
+      if (hour >= 4 && hour < 12) return 'Shubhodaya • Good Morning';
+      if (hour >= 12 && hour < 17) return 'Shubha Madhyanha • Good Afternoon';
+      if (hour >= 17 && hour < 21) return 'Shubha Sandhya • Good Evening';
+      return 'Shubha Rathri • Good Night';
+    }
+  };
+
+  const istGreeting = getISTGreeting();
+  const firstName = user.name ? user.name.split(' ')[0] : 'Member';
+  const isFirst = user.isFirstLogin;
+  const welcomeHeading = isFirst
+    ? `Hi ${firstName}, Welcome to Mathreya`
+    : `Welcome Back, ${firstName}`;
+  const welcomeEmoji = isFirst ? '🪷' : '👋';
+
   return (
     <div className="w-full max-w-full sm:max-w-2xl md:max-w-4xl xl:max-w-6xl mx-auto px-3 sm:px-6 md:px-8 py-3 space-y-4 select-none text-[#4D2D22] bg-[#FFF8F5]">
       
@@ -126,14 +163,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ user, onNavigate }
           <div className="flex items-center justify-between">
             <p className="text-[11px] sm:text-xs font-bold text-amber-100 uppercase tracking-wider flex items-center gap-1.5">
               <Sparkles className="w-4 h-4 text-amber-200" />
-              <span>Shubha Sandhya • Good Evening</span>
+              <span>{istGreeting}</span>
             </p>
             <span className="text-base">🪷</span>
           </div>
 
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-serif font-extrabold text-white tracking-tight flex items-center gap-2">
-            <span>{user.name.split(' ')[0]}</span>
-            <span className="text-xl sm:text-2xl animate-pulse">🌸</span>
+            <span>{welcomeHeading}</span>
+            <span className="text-xl sm:text-2xl animate-pulse">{welcomeEmoji}</span>
           </h1>
           <p className="text-xs sm:text-sm text-white/90 font-serif italic pt-0.5">
             "The Care That Feels Like Home"

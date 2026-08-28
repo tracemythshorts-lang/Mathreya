@@ -132,9 +132,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             onMouseUp={cancelLongPress}
             onMouseLeave={cancelLongPress}
             title="Profile • Long Press for Emergency SOS"
-            className="w-9 h-9 rounded-full bg-[#B76A4B] text-white text-xs font-extrabold flex items-center justify-center border-2 border-white shadow-2xs cursor-pointer"
+            className="w-9 h-9 rounded-full bg-[#B76A4B] text-white text-xs font-extrabold flex items-center justify-center border-2 border-white shadow-2xs cursor-pointer overflow-hidden"
           >
-            {user.name ? user.name.charAt(0) : 'A'}
+            {user.avatarUrl ? (
+              <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
+            ) : (
+              user.name ? user.name.charAt(0) : 'A'
+            )}
           </motion.button>
         </div>
       </header>

@@ -1,410 +1,501 @@
-Mathreya Task Instructions
+# Mathreya Authentication Integration — Firebase + WebAuthn + Appwrite
 
-Purpose
+## Scope
 
-This file is the short operational instruction for AI coding agents working on Mathreya.
+Implement and verify the complete authentication flow for Mathreya.
 
-Rule: Read context.md first. Use it as the project background. Do not repeatedly ask for the full project context.
+Do not start database Phase 9.
 
-How to Work
+Do not modify unrelated application features.
 
-When the user gives a task:
+Do not work on `/api/v1/health` during this task.
 
-Read context.md.
+Preserve the existing:
 
-Identify the exact requested feature/change.
+* Appwrite backend integration
+* WebAuthn/passkey implementation
+* Existing Mathreya UI design
+* Existing React application architecture
 
-Inspect only the relevant existing files needed for that task.
+---
 
-Reuse existing Mathreya patterns before creating new ones.
+# Authentication Architecture
 
-Make the smallest clean change that fully satisfies the task.
+Use:
 
-Preserve all existing working features.
+* **Firebase Authentication** as the primary identity provider
+* **WebAuthn / Passkeys** as the required second-stage device authentication
+* **Appwrite** as the application backend and future database/storage provider
 
-Keep TypeScript type-safe.
+Do not use Firebase Firestore or Firebase Storage for Mathreya application data.
 
-Keep the existing Mathreya visual style.
+Do not create a custom biometric system.
 
-Keep mobile + desktop responsive behavior.
+Do not upload:
 
-Run/build/check the project when practical.
+* Fingerprints
+* Facial images
+* Biometric templates
 
-Fix errors caused by your changes.
+The operating system or device must perform biometric authentication locally through WebAuthn.
 
-Report what was changed briefly.
+---
 
-Scope Control
+# Firebase Environment Variables
 
-Do NOT:
+Use these environment variables:
 
-rewrite the whole project
+```env
+VITE_FIREBASE_API_KEY=
+VITE_FIREBASE_AUTH_DOMAIN=
+VITE_FIREBASE_PROJECT_ID=
+VITE_FIREBASE_STORAGE_BUCKET=
+VITE_FIREBASE_MESSAGING_SENDER_ID=
+VITE_FIREBASE_APP_ID=
+VITE_FIREBASE_MEASUREMENT_ID=
+```
 
-refactor unrelated files
+Requirements:
 
-change the design system without being asked
+* Read them using `import.meta.env`.
+* Do not hardcode Firebase configuration.
+* Do not expose Firebase Admin credentials.
+* Do not commit real `.env` secrets.
+* Update `.env.example` with empty placeholders only.
+* Preserve existing Appwrite environment variables.
 
-add libraries without a real need
+Create one canonical Firebase client module inside the existing `src/lib` architecture.
 
-replace existing working components unnecessarily
+Do not initialize Firebase more than once.
 
-remove existing features
+---
 
-change backend architecture for a UI-only task
+# Registration Flow
 
-modify Flutter for a React-only task
+The registration page must collect:
 
-use fake APIs or claim a real booking/payment/medical action happened
+1. Full Name
+2. Date of Birth
+3. Email OR Mobile Number
+4. Password for Email registration
 
-use as any to hide a TypeScript problem when a proper type is possible
+The registration UI must clearly provide:
 
-If the task is small, make a small change.
+* Register with Email
+* Register with Mobile
 
-Menopause Feature Rule
+---
 
-Menopause is now a required real life-stage module, not a "Coming Soon" placeholder.
+## Email Registration
 
-The menopause experience should be comparable in quality and structure to Puberty and Pregnancy.
+Flow:
 
-Use the existing project architecture rather than inventing a new architecture.
-
-Required direction
-
-Menopause should cover the appropriate combination of:
-
-overview/education
-
-perimenopause, menopause and postmenopause explanation
-
-symptom/wellness tracking
-
-daily routines/self-care
-
-AI menopause guidance
-
-community
-
-doctor/consultation discovery
-
-media/resources
-
-private safe space
-
-Do not force every module into one giant page. Prefer reusable cards, tabs, sections or subviews consistent with the existing Puberty/Pregnancy UX.
-
-Menopause Navigation
-
-When implementing menopause:
-
-add menopause to AppScreen
-
-add it to LifeStage if the data model requires it
-
-add the route in App.tsx
-
-update Navbar.tsx if the drawer needs a direct menopause item
-
-update DashboardView.tsx
-
-remove Coming Soon
-
-make the dashboard menopause card clickable
-
-create a dedicated menopause view/component
-
-Do not permanently solve the route with as any.
-
-Menopause Content
-
-Keep language:
-
-mature
-
-respectful
-
-reassuring
-
-simple
-
-medically responsible
-
-culturally warm
-
-Important medical framing:
-
-menopause is a normal life stage, not a disease
-
-perimenopause is the transition before menopause
-
-menopause is generally identified after 12 consecutive months without a menstrual period when no other cause explains it
-
-postmenopause follows menopause
+```text
+Full Name
++ Date of Birth
++ Email
++ Password
+        ↓
+Firebase create email/password account
+        ↓
+Primary identity created
+        ↓
+Mandatory WebAuthn/passkey enrollment
+        ↓
+Account ready
+```
+
+Use Firebase Authentication's official email/password authentication.
+
+Preserve the Firebase UID.
+
+---
+
+## Mobile Registration
+
+Flow:
+
+```text
+Full Name
++ Date of Birth
++ Mobile Number
+        ↓
+Firebase phone authentication
+        ↓
+Firebase reCAPTCHA verification
+        ↓
+SMS OTP sent
+        ↓
+User enters OTP
+        ↓
+Firebase verifies OTP
+        ↓
+Mandatory WebAuthn/passkey enrollment
+        ↓
+Account ready
+```
+
+Use Firebase's official:
+
+* `RecaptchaVerifier`
+* Phone authentication
+* OTP confirmation flow
 
 Do not:
 
-diagnose
+* Implement custom OTP logic
+* Hardcode OTP values
+* Store OTP values manually
+* Bypass Firebase app verification
 
-prescribe medication
+Ensure React does not create duplicate reCAPTCHA verifier instances.
 
-promise cures
+---
 
-present Ayurveda/home remedies as medical replacements
+# Mandatory Device Security Enrollment
 
-imply every symptom is caused by menopause
+After successful primary registration:
 
-Where appropriate, tell users to consult a qualified clinician.
+Show a security screen or modal:
 
-Menopause Community
+```text
+Secure your Mathreya account
+```
 
-Follow the existing community pattern.
+Then invoke the existing WebAuthn registration flow.
 
-Community should allow menopause-related discussion such as:
-
-symptoms
-
-sleep
-
-mood
-
-nutrition
-
-movement
-
-relationships
-
-work/life
-
-perimenopause questions
-
-doctor experiences
-
-postmenopause wellbeing
-
-Keep moderation/privacy concepts consistent with the existing CommunityPost model.
-
-Never expose private health logs as public posts automatically.
-
-Menopause Doctor Area
-
-Create/reuse doctor cards similar to existing healthcare modules.
-
-Possible specialties:
-
-Gynecologist / OB-GYN
-
-Women's health physician
-
-General physician
-
-Endocrinologist
-
-Mental health professional
-
-If booking is only demo UI, label it as such through the existing UX convention. Never claim a real appointment was booked unless a real booking system exists.
-
-Menopause AI
-
-If the task includes AI:
-
-add a menopause_assistant persona in server.ts
-
-keep the AI concise and easy to understand
-
-answer general women's health questions
-
-do not diagnose
-
-do not prescribe
-
-recommend professional care for concerning symptoms
-
-do not use childish/teenage language
-
-do not confuse menopause with pregnancy or puberty
-
-Keep the API key server-side.
-
-Reuse Before Rebuild
-
-Before creating a new UI pattern, inspect:
-
-PubertyView.tsx
-
-PregnancyView.tsx
-
-DashboardView.tsx
-
-Navbar.tsx
-
-types.ts
-
-data.ts
-
-Reuse:
-
-card styles
-
-tab patterns
-
-modal patterns
-
-doctor cards
-
-community structures
-
-AI chat patterns
-
-tracking patterns
-
-responsive layouts
-
-existing icons and haptics
-
-Data / Types
-
-Update types properly when menopause needs new data.
+The device/browser determines the available authentication method.
 
 Examples:
 
-menopause
+### PC / Laptop
 
-perimenopause
+* Windows Hello
+* Windows fingerprint
+* Windows face recognition
+* Touch ID
+* Device PIN
+* Other supported passkey authenticators
 
-postmenopause
+### Mobile
 
-menopause symptom logs
+* Fingerprint
+* Face ID
+* Face Unlock
+* Device authentication
+* Device PIN/passcode
+* Other supported passkey authenticators
 
-menopause-specific community stage
+Do not ask the user to upload a fingerprint or face.
 
-menopause media categories
+Do not implement custom face recognition.
 
-menopause journal category
+The UI should explain:
 
-Prefer explicit TypeScript unions/interfaces over any.
+```text
+Your device securely handles fingerprint or face verification.
+Mathreya never receives your fingerprint or facial data.
+```
 
-Do not modify unrelated interfaces unless needed.
+If the preferred platform biometric is unavailable, provide:
 
-File Selection
+```text
+Try other options
+```
 
-Use this priority:
+This must use browser/device-supported passkey alternatives.
 
-If task is dashboard/navigation
+---
 
-Inspect:
+# Login Flow
 
-src/App.tsx
+A successful Firebase authentication must NOT immediately redirect the user to Home.
 
-src/components/DashboardView.tsx
+The required sequence is:
 
-src/components/Navbar.tsx
+```text
+Primary Authentication
+        ↓
+WebAuthn / Passkey Verification
+        ↓
+Final Mathreya Authentication
+        ↓
+Home
+```
 
-src/types.ts
+---
 
-If task is menopause UI
+## Email Login
 
-Inspect:
+```text
+Email
++ Password
+        ↓
+Firebase Authentication succeeds
+        ↓
+DO NOT redirect to Home
+        ↓
+WebAuthn authentication challenge
+        ↓
+Fingerprint / Face / Windows Hello / Passkey
+        ↓
+WebAuthn verification succeeds
+        ↓
+Home
+```
 
-src/components/PubertyView.tsx
+If WebAuthn fails or is cancelled:
 
-src/components/PregnancyView.tsx
+* Do not redirect to Home.
+* Keep the user out of protected application areas.
+* Show a clear error.
+* Allow retry.
 
-relevant data/types
-Then create/update the menopause component.
+---
 
-If task is menopause AI
+## Mobile Login
 
-Inspect:
+```text
+Mobile Number
+        ↓
+Firebase Phone Authentication
+        ↓
+Firebase SMS OTP
+        ↓
+Firebase verifies OTP
+        ↓
+DO NOT redirect to Home
+        ↓
+WebAuthn authentication challenge
+        ↓
+Fingerprint / Face / Device Authentication / Passkey
+        ↓
+WebAuthn verification succeeds
+        ↓
+Home
+```
 
-server.ts
+---
 
-existing AI UI component/pattern
+# Important Device Behavior
 
-If task is community
+Do not create separate fake buttons for:
 
-Inspect:
+* Face ID
+* Fingerprint
+* Windows Hello
 
-existing community implementation in Puberty/Pregnancy
+Use one WebAuthn/passkey request.
 
-src/types.ts
+The operating system or browser decides which authentication method to present.
 
-src/data.ts
+Expected examples:
 
-If task is Flutter
+* Windows laptop → Windows Hello fingerprint or face
+* Windows desktop → Windows Hello or another supported authenticator
+* Android → fingerprint/face/device authentication
+* iPhone/iPad → Face ID or Touch ID
+* Compatible device without biometrics → device passcode/PIN or another passkey option
 
-Only inspect/modify flutter_project/ when the user explicitly asks for Flutter work.
+Provide a visible:
 
-Verification
+```text
+Try other options
+```
 
-After implementation, check:
+fallback where appropriate.
 
-TypeScript errors
+---
 
-build errors
+# Authentication State
 
-broken imports
+Update `AuthContext` so it represents these states:
 
-invalid routes
+```text
+unauthenticated
+primary_authenticated
+awaiting_passkey
+authenticated
+recovering
+```
 
-missing assets
+The final Mathreya application session must only become:
 
-responsive layout
+```text
+authenticated
+```
 
-existing navigation
+after:
 
-existing modules still accessible
+1. Firebase primary authentication succeeds.
+2. WebAuthn authentication succeeds.
 
-Preferred commands:
+Firebase `onAuthStateChanged` alone must NOT grant access to protected Mathreya routes.
 
+---
+
+# Canonical Identity
+
+Firebase UID must be the canonical user identity.
+
+Identity relationship:
+
+```text
+Firebase User UID
+        ↓
+WebAuthn Credential(s)
+        ↓
+Future Appwrite User/Application Records
+```
+
+WebAuthn credentials must be associated with the Firebase UID.
+
+Do not create duplicate Appwrite users for the same person.
+
+Before database Phase 9, document the final identity mapping clearly.
+
+If the current WebAuthn implementation uses another identifier, migrate carefully to Firebase UID mapping.
+
+Do not destroy existing passkey data.
+
+If there are no real production users yet, document that assumption and use Firebase UID as the clean canonical identity.
+
+---
+
+# Password Recovery
+
+Implement or preserve Firebase email/password recovery.
+
+Password recovery must not bypass required WebAuthn second-stage authentication when a passkey is enrolled and required.
+
+---
+
+# UI Requirements
+
+Preserve the existing Mathreya design.
+
+Do not redesign unrelated pages.
+
+The flow should be understandable.
+
+## Registration
+
+```text
+Create Account
+        ↓
+Verify Email or Mobile
+        ↓
+Secure your Mathreya account
+        ↓
+Fingerprint / Face / Device Passkey
+        ↓
+Account Ready
+```
+
+## Login
+
+```text
+Email + Password
+        OR
+Mobile + OTP
+        ↓
+Primary identity verified
+        ↓
+Confirm identity on this device
+        ↓
+Fingerprint / Face / Windows Hello / Passkey
+        ↓
+Home
+```
+
+---
+
+# Technical Requirements
+
+Use Firebase Authentication for:
+
+* Email/password authentication
+* Password recovery
+* Phone number authentication
+* Firebase SMS OTP
+
+Use existing SimpleWebAuthn/WebAuthn implementation for:
+
+* Passkey registration
+* Passkey authentication
+* Device biometric/passkey authentication
+
+Keep Appwrite for:
+
+* Backend application architecture
+* Future database
+* Future storage
+* Future application records
+
+Do not use Firebase Firestore for application healthcare data.
+
+---
+
+# Required Dependency
+
+Install Firebase if it is not already installed:
+
+```bash
+npm install firebase
+```
+
+Do not add unnecessary authentication libraries.
+
+---
+
+# Testing Requirements
+
+Before completion:
+
+1. Run:
+
+```bash
 npm run lint
+```
 
+2. Run:
+
+```bash
 npm run build
+```
 
-If a command cannot be run, continue with careful static verification and state that it was not run.
+3. Test email registration flow.
 
-Response Style to User
+4. Test email login flow.
 
-The user prefers direct, simple, humanized explanations.
+5. Test phone OTP UI and Firebase integration.
 
-After coding:
+6. Verify successful primary authentication does not redirect directly to Home.
 
-say what was done
+7. Verify WebAuthn is triggered after successful primary authentication.
 
-mention important files changed
+8. Verify Home access occurs only after successful WebAuthn verification.
 
-mention verification status
+9. Verify cancelling WebAuthn prevents Home access.
 
-mention any remaining limitation
+---
 
-Do not dump the entire code unless requested.
+# Completion Report
 
-Task Input Format
+Report exactly:
 
-The user can provide only the task after this file is loaded.
+1. Files created.
+2. Files modified.
+3. Files deleted.
+4. Firebase flows implemented.
+5. Final registration flow.
+6. Final login flow.
+7. Firebase UID → WebAuthn → Appwrite identity mapping.
+8. `npm run lint` result.
+9. `npm run build` result.
+10. Any blockers.
 
-Example:
+Stop after authentication integration.
 
-Add menopause navigation and create the basic menopause page.
-
-The agent should infer the project context from context.md, inspect the relevant files, and work directly.
-
-For a larger task, the user can write:
-
-Build the menopause module with overview, symptom tracker, community, doctors, media and AI assistant.
-
-The agent should implement it incrementally using the existing architecture and styling.
-
-Priority Order
-
-When requirements conflict, use this order:
-
-User's latest explicit task
-
-Existing project functionality
-
-context.md
-
-Existing UI/design patterns
-
-General implementation preference
-
-Never let this file override a newer explicit user instruction.
+Do not start Phase 9 database work.
+    

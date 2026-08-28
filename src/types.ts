@@ -46,6 +46,7 @@ export interface UserProfile {
   emergencyContactName?: string;
   emergencyContactPhone?: string;
   location?: string;
+  isFirstLogin?: boolean;
 }
 
 export interface PeriodLog {

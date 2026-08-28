@@ -9,37 +9,48 @@ import { PregnancyView } from './components/PregnancyView';
 import { VirtualMomView } from './components/VirtualMomView';
 import { HusbandDashboardView } from './components/HusbandDashboardView';
 import { FlutterCodeModal } from './components/FlutterCodeModal';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Heart, 
-  ShieldCheck, 
-  ArrowLeft
-} from 'lucide-react';
+import { Heart, ArrowLeft, Sparkles } from 'lucide-react';
 import { triggerHapticFeedback } from './utils/haptics';
 
-export function App() {
-  const [currentScreen, setCurrentScreen] = useState<AppScreen>('dashboard');
+function MainAppContent() {
+  const {
+    user: authUser,
+    status: authStatus,
+    logout,
+  } = useAuth();
+
+  // DEFAULT SCREEN IS 'login' ON FIRST OPEN (NOT DASHBOARD)
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>('login');
   const [isFlutterModalOpen, setIsFlutterModalOpen] = useState<boolean>(false);
-  const [user, setUser] = useState<UserProfile>({
+  const [localProfile, setLocalProfile] = useState<UserProfile>({
     name: 'Ananya Sharma',
     email: 'ananya.sharma@example.com',
     phone: '+91 98765 43210',
     age: 26,
     stage: 'pregnancy_prenatal',
+    avatarUrl: typeof window !== 'undefined' ? localStorage.getItem('mathreya_user_face_photo') || undefined : undefined,
     faceAuthEnabled: true,
-    isAuthenticated: true,
+    isAuthenticated: false,
     pregnancyWeek: 24,
     emergencyContactName: 'Dr. Priya Sharma (Sister / OB-GYN)',
     emergencyContactPhone: '+91 98111 22233',
     location: 'Bengaluru, Karnataka',
   });
 
+  const isAuthenticated = authStatus === 'authenticated';
+
+  const currentUser: UserProfile = authUser
+    ? { ...localProfile, ...authUser, isAuthenticated }
+    : { ...localProfile, isAuthenticated };
+
   const handleUpdateUser = (updated: Partial<UserProfile>) => {
-    setUser((prev) => ({ ...prev, ...updated }));
+    setLocalProfile((prev) => ({ ...prev, ...updated }));
   };
 
   const handleLoginSuccess = (loginData: Partial<UserProfile>) => {
-    setUser((prev) => ({
+    setLocalProfile((prev) => ({
       ...prev,
       ...loginData,
       isAuthenticated: true,
@@ -47,12 +58,13 @@ export function App() {
     setCurrentScreen('dashboard');
   };
 
-  const handleLogout = () => {
-    setUser((prev) => ({
-      ...prev,
-      isAuthenticated: false,
-    }));
+  const [logoutToast, setLogoutToast] = useState<string | null>(null);
+
+  const handleLogout = async () => {
+    await logout();
+    setLogoutToast('Thanks for having with us! Have a great time ✨');
     setCurrentScreen('login');
+    setTimeout(() => setLogoutToast(null), 5000);
   };
 
   const primaryScreens: AppScreen[] = [
@@ -60,7 +72,7 @@ export function App() {
     'puberty',
     'pregnancy_prenatal',
     'virtual_mother',
-    'husband_dashboard'
+    'husband_dashboard',
   ];
 
   const handleSwipeEnd = (_: any, info: { offset: { x: number }; velocity: { x: number } }) => {
@@ -79,18 +91,34 @@ export function App() {
 
   return (
     <div className="min-h-screen flex flex-col font-sans bg-[#FFF8F5] text-[#4D2D22] antialiased selection:bg-[#B76A4B]/20 selection:text-[#B76A4B]">
+      {/* Signout Toast Banner */}
+      <AnimatePresence>
+        {logoutToast && (
+          <motion.div
+            initial={{ opacity: 0, y: -40, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -40, scale: 0.95 }}
+            className="fixed top-5 inset-x-0 z-50 flex justify-center px-4 pointer-events-none"
+          >
+            <div className="bg-gradient-to-r from-[#8B3012] via-[#C85A32] to-[#D97757] text-white px-6 py-3.5 rounded-full shadow-2xl border border-amber-200/40 text-xs sm:text-sm font-serif font-extrabold flex items-center gap-2.5 backdrop-blur-md">
+              <Sparkles className="w-4 h-4 text-amber-200 animate-pulse" />
+              <span>{logoutToast}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main Navbar */}
       <Navbar
         currentScreen={currentScreen}
         onNavigate={setCurrentScreen}
-        user={user}
+        user={currentUser}
         onLogout={handleLogout}
       />
 
       {/* Main Application Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-4 md:px-6 py-3 md:py-6 pb-20 md:pb-6 overflow-hidden">
-        
-        {/* Clean Back Button Header (Technical module labels removed) */}
+        {/* Clean Back Button Header */}
         {currentScreen !== 'dashboard' && currentScreen !== 'login' && currentScreen !== 'profile' && (
           <motion.div
             initial={{ opacity: 0, y: -6 }}
@@ -129,7 +157,7 @@ export function App() {
             className="touch-pan-y"
           >
             {currentScreen === 'dashboard' && (
-              <DashboardView user={user} onNavigate={setCurrentScreen} />
+              <DashboardView user={currentUser} onNavigate={setCurrentScreen} />
             )}
 
             {currentScreen === 'login' && (
@@ -141,7 +169,7 @@ export function App() {
 
             {currentScreen === 'profile' && (
               <ProfileView
-                user={user}
+                user={currentUser}
                 onUpdateUser={handleUpdateUser}
                 onNavigate={setCurrentScreen}
                 onOpenFlutterCode={() => setIsFlutterModalOpen(true)}
@@ -175,37 +203,52 @@ export function App() {
       <FlutterCodeModal
         isOpen={isFlutterModalOpen}
         onClose={() => setIsFlutterModalOpen(false)}
-        activeStage={currentScreen === 'login' || currentScreen === 'profile' || currentScreen === 'dashboard' ? 'pregnancy_prenatal' : currentScreen}
+        activeStage={
+          currentScreen === 'login' || currentScreen === 'profile' || currentScreen === 'dashboard'
+            ? 'pregnancy_prenatal'
+            : currentScreen
+        }
         activeSubTab="tracker"
       />
 
       {/* FLOATING ACTION BUTTON (FAB) FOR VIRTUAL MOTHER CHAT ON MOBILE */}
-      {user.isAuthenticated && currentScreen !== 'dashboard' && currentScreen !== 'virtual_mother' && currentScreen !== 'login' && (
-        <div className="fixed bottom-6 right-5 z-50 md:hidden flex items-center gap-2">
-          <button
-            onClick={() => {
-              triggerHapticFeedback('pulse');
-              setCurrentScreen('virtual_mother');
-            }}
-            className="fab-warm-pulse px-4 py-3 rounded-full bg-gradient-to-r from-[#B76A4B] to-[#C87958] text-white border-2 border-white shadow-2xl flex items-center gap-2.5 cursor-pointer active:scale-95 transition-transform"
-            title="Launch Virtual Mother AI Chat"
-          >
-            <div className="relative flex items-center justify-center">
-              <Heart className="w-5 h-5 text-amber-200 fill-amber-200 animate-pulse" />
-              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            </div>
-            <div className="flex flex-col text-left">
-              <span className="text-xs font-black tracking-wide font-serif leading-none text-white">
-                Virtual Amma
-              </span>
-              <span className="text-[9px] font-bold text-amber-200/90 leading-none mt-0.5 uppercase tracking-wider">
-                Ask Amma AI
-              </span>
-            </div>
-          </button>
-        </div>
-      )}
+      {currentUser.isAuthenticated &&
+        currentScreen !== 'dashboard' &&
+        currentScreen !== 'virtual_mother' &&
+        currentScreen !== 'login' && (
+          <div className="fixed bottom-6 right-5 z-50 md:hidden flex items-center gap-2">
+            <button
+              onClick={() => {
+                triggerHapticFeedback('pulse');
+                setCurrentScreen('virtual_mother');
+              }}
+              className="fab-warm-pulse px-4 py-3 rounded-full bg-gradient-to-r from-[#B76A4B] to-[#C85A32] text-white border-2 border-white shadow-2xl flex items-center gap-2.5 cursor-pointer active:scale-95 transition-transform"
+              title="Launch Virtual Mother AI Chat"
+            >
+              <div className="relative flex items-center justify-center">
+                <Heart className="w-5 h-5 text-amber-200 fill-amber-200 animate-pulse" />
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              </div>
+              <div className="flex flex-col text-left">
+                <span className="text-xs font-black tracking-wide font-serif leading-none text-white">
+                  Virtual Amma
+                </span>
+                <span className="text-[9px] font-bold text-amber-200/90 leading-none mt-0.5 uppercase tracking-wider">
+                  Ask Amma AI
+                </span>
+              </div>
+            </button>
+          </div>
+        )}
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <MainAppContent />
+    </AuthProvider>
   );
 }
 
