@@ -28,7 +28,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const {
     signupWithEmail,
     loginWithEmail,
-    verifyEmailOTPOnly,
     sendPasswordRecovery,
     setUserPhotoUrl,
     error: authError,
@@ -44,12 +43,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [phoneInput, setPhoneInput] = useState('');
   const [password, setPassword] = useState('');
   const [stage, setStage] = useState<'pregnancy_prenatal' | 'puberty' | 'husband'>('pregnancy_prenatal');
-
-  // Email OTP Modal — shown AFTER account is created
-  const [showEmailOtpModal, setShowEmailOtpModal] = useState(false);
-  const [otpTokenUserId, setOtpTokenUserId] = useState<string | null>(null);
-  const [otpCode, setOtpCode] = useState('');
-  const [otpLoading, setOtpLoading] = useState(false);
 
   // Password Recovery Modal
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -118,11 +111,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   };
 
   // ── Register / Login submit ───────────────────────────────────────────────
-  // Register flow:
-  //   1. account.create(name, email, password)
-  //   2. account.updatePrefs({ phone, dob, stage })
-  //   3. account.createEmailToken → sends OTP to email
-  //   4. Show OTP verification modal
+  // Register flow: Create account → store all prefs → show security step
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     triggerHapticFeedback('success');
@@ -137,13 +126,12 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         if (!phoneInput.trim()) throw new Error('Please enter your mobile phone number.');
         if (!password || password.length < 8) throw new Error('Password must be at least 8 characters long.');
 
-        // Create account + store all data + send OTP → returns tokenUserId
-        const { tokenUserId } = await signupWithEmail(name, dob, emailInput, password, stage, phoneInput);
+        // Create account + store all data (name, email, password, phone, dob, stage)
+        await signupWithEmail(name, dob, emailInput, password, stage, phoneInput);
 
         setPendingUser({ name, email: emailInput, phone: phoneInput, stage, isAuthenticated: true });
-        setOtpTokenUserId(tokenUserId);
-        setOtpCode('');
-        setShowEmailOtpModal(true);
+        setShowSecurityModal(true);
+        startCamera();
       } else {
         // Sign In: email + password
         if (!emailInput || !password) throw new Error('Please enter your email address and password.');
@@ -156,30 +144,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
       setLocalError(err.message || 'Authentication failed. Please check your entries.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ── OTP Verification (after account creation) ─────────────────────────────
-  const handleVerifyOtp = async () => {
-    if (!otpCode || otpCode.length < 6) {
-      setLocalError('Please enter the complete 6-digit OTP sent to your email.');
-      return;
-    }
-    setOtpLoading(true);
-    setLocalError(null);
-    try {
-      if (!otpTokenUserId) throw new Error('OTP session expired. Please restart registration.');
-      await verifyEmailOTPOnly(otpTokenUserId, otpCode);
-      setShowEmailOtpModal(false);
-      setOtpCode('');
-      triggerHapticFeedback('success');
-      // Email verified → open security step
-      setShowSecurityModal(true);
-      startCamera();
-    } catch (err: any) {
-      setLocalError(err.message || 'Invalid OTP. Please check and try again.');
-    } finally {
-      setOtpLoading(false);
     }
   };
 
@@ -325,9 +289,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 />
                 <Mail className="w-4 h-4 text-[#8B756A] absolute right-3.5 top-3.5" />
               </div>
-              <p className="text-[10px] text-[#8B756A] mt-1 ml-1">
-                A 6-digit verification OTP will be sent to this email after account creation.
-              </p>
             </div>
 
             {/* 4. Phone Number (mandatory, no OTP) */}
@@ -451,75 +412,6 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
           Safe &amp; Encrypted Authentication
         </p>
       </div>
-
-      {/* ─── EMAIL OTP VERIFICATION MODAL ─────────────────────────────────── */}
-      {/* Appears after account creation — user verifies email before dashboard */}
-      <AnimatePresence>
-        {showEmailOtpModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/70 backdrop-blur-md">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="bg-white max-w-sm w-full rounded-3xl p-6 shadow-2xl border border-[#F0E8DD] space-y-4 text-[#3D251E]"
-            >
-              <div className="text-center space-y-2">
-                <div className="w-14 h-14 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto border border-amber-200">
-                  <Mail className="w-7 h-7 text-amber-600" />
-                </div>
-                <h3 className="text-base font-serif font-extrabold text-[#5E2211]">Verify Your Email</h3>
-                <p className="text-xs text-stone-600 leading-relaxed">
-                  Account created! A 6-digit OTP has been sent to<br />
-                  <span className="font-bold text-[#B76A4B]">{emailInput}</span>
-                </p>
-                <p className="text-[10px] text-stone-400">Check your spam folder if not received.</p>
-              </div>
-
-              {localError && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-800 text-xs p-3 rounded-xl flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>{localError}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-[#8B756A] mb-1.5">Enter 6-digit OTP</label>
-                <input
-                  id="email-otp-input"
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otpCode}
-                  onChange={(e) => {
-                    setLocalError(null);
-                    setOtpCode(e.target.value.replace(/\D/g, ''));
-                  }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleVerifyOtp(); }}
-                  className="w-full px-4 py-3.5 rounded-2xl bg-[#FCFAF7] border border-[#EAE0D2] text-center font-mono text-2xl font-bold tracking-[0.4em] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] text-[#4D2D22]"
-                  placeholder="──────"
-                  autoFocus
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={handleVerifyOtp}
-                disabled={otpLoading || otpCode.length < 6}
-                className="w-full py-3.5 bg-[#B76A4B] hover:bg-[#A05A3B] disabled:opacity-50 text-white font-serif font-extrabold rounded-2xl text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md cursor-pointer"
-              >
-                {otpLoading ? (
-                  <span>Verifying...</span>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Verify Email &amp; Continue</span>
-                  </>
-                )}
-              </button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
       {/* ─── SECURITY VERIFICATION MODAL ──────────────────────────────────── */}
       <AnimatePresence>
