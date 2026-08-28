@@ -1,501 +1,361 @@
-# Mathreya Authentication Integration — Firebase + WebAuthn + Appwrite
+# Authentication Stabilization and Facial Verification Requirements
 
-## Scope
+## Current task scope
 
-Implement and verify the complete authentication flow for Mathreya.
+Do not begin database schema creation in this task.
 
-Do not start database Phase 9.
+Do not implement Firebase.
 
-Do not modify unrelated application features.
+Do not implement WebAuthn.
 
-Do not work on `/api/v1/health` during this task.
+Do not implement passkeys.
 
-Preserve the existing:
+Do not implement Windows Hello.
 
-* Appwrite backend integration
-* WebAuthn/passkey implementation
-* Existing Mathreya UI design
-* Existing React application architecture
+Do not implement Touch ID.
 
----
+Do not implement Android fingerprint authentication.
 
-# Authentication Architecture
+Do not implement device biometric authentication.
+
+Use Appwrite as the authentication provider.
+
+The current task is to stabilize Appwrite authentication and prepare the architecture for future actual facial verification.
+
+## Appwrite authentication methods
 
 Use:
 
-* **Firebase Authentication** as the primary identity provider
-* **WebAuthn / Passkeys** as the required second-stage device authentication
-* **Appwrite** as the application backend and future database/storage provider
+* Email/Password
+* Email OTP
+* Phone OTP
 
-Do not use Firebase Firestore or Firebase Storage for Mathreya application data.
+The canonical authenticated identity is:
 
-Do not create a custom biometric system.
+```text
+appwriteUserId = account.$id
+```
 
-Do not upload:
+All future user records must reference this ID.
 
-* Fingerprints
-* Facial images
-* Biometric templates
+## Required UI text
 
-The operating system or device must perform biometric authentication locally through WebAuthn.
+Replace:
 
----
+```text
+Create Appwrite Account
+```
 
-# Firebase Environment Variables
+with:
 
-Use these environment variables:
+```text
+Create Account
+```
 
-```env
-VITE_FIREBASE_API_KEY=
-VITE_FIREBASE_AUTH_DOMAIN=
-VITE_FIREBASE_PROJECT_ID=
-VITE_FIREBASE_STORAGE_BUCKET=
-VITE_FIREBASE_MESSAGING_SENDER_ID=
-VITE_FIREBASE_APP_ID=
-VITE_FIREBASE_MEASUREMENT_ID=
+Replace:
+
+```text
+Sign In with Appwrite
+```
+
+with:
+
+```text
+Sign In
+```
+
+Replace:
+
+```text
+Send Appwrite SMS OTP
+```
+
+with:
+
+```text
+Send SMS OTP
+```
+
+Use clear labels:
+
+```text
+Create Account
+Sign In
+Send Email OTP
+Send SMS OTP
+Verify OTP
+Resend OTP
+```
+
+Do not expose authentication-provider branding in normal user action buttons.
+
+## Email/password flow
+
+Implement and verify:
+
+```text
+Enter Email + Password
+→ Sign In
+→ Appwrite primary authentication
+→ Create authenticated session
+```
+
+Use the official installed Appwrite SDK methods.
+
+Do not invent API method names.
+
+## Email OTP flow
+
+Implement and verify:
+
+```text
+Enter Email
+→ Send Email OTP
+→ User receives email
+→ Enter OTP
+→ Verify with Appwrite
+→ Create authenticated session
 ```
 
 Requirements:
 
-* Read them using `import.meta.env`.
-* Do not hardcode Firebase configuration.
-* Do not expose Firebase Admin credentials.
-* Do not commit real `.env` secrets.
-* Update `.env.example` with empty placeholders only.
-* Preserve existing Appwrite environment variables.
+* Use Appwrite's official token/session flow.
+* Do not generate custom email OTP values.
+* Do not hard-code OTP values.
+* Handle invalid OTP.
+* Handle expired OTP.
+* Handle resend requests safely.
 
-Create one canonical Firebase client module inside the existing `src/lib` architecture.
+## Phone OTP flow
 
-Do not initialize Firebase more than once.
-
----
-
-# Registration Flow
-
-The registration page must collect:
-
-1. Full Name
-2. Date of Birth
-3. Email OR Mobile Number
-4. Password for Email registration
-
-The registration UI must clearly provide:
-
-* Register with Email
-* Register with Mobile
-
----
-
-## Email Registration
-
-Flow:
+Implement and verify:
 
 ```text
-Full Name
-+ Date of Birth
-+ Email
-+ Password
-        ↓
-Firebase create email/password account
-        ↓
-Primary identity created
-        ↓
-Mandatory WebAuthn/passkey enrollment
-        ↓
-Account ready
+Enter Phone Number
+→ Send SMS OTP
+→ User receives SMS
+→ Enter OTP
+→ Verify with Appwrite
+→ Create authenticated session
 ```
 
-Use Firebase Authentication's official email/password authentication.
+Requirements:
 
-Preserve the Firebase UID.
+* Use official Appwrite phone authentication.
+* Validate phone number format before requesting OTP.
+* Handle invalid OTP.
+* Handle expired OTP.
+* Handle resend requests safely.
+* Do not expose unnecessary internal provider error messages directly to users.
 
----
+## Development mock phone testing
 
-## Mobile Registration
+Real SMS is currently unavailable because the Appwrite phone authentication allowance or budget limit has been exceeded.
 
-Flow:
+First inspect whether Appwrite Mock Phone Numbers are available in the current Appwrite project configuration.
+
+If available:
+
+1. Configure the approved development test phone number in Appwrite.
+2. Configure the approved development OTP in Appwrite.
+3. Keep application code identical to the production authentication flow.
+4. The application must call Appwrite for OTP initiation and verification.
+
+Do not create a frontend authentication bypass.
+
+Do not permanently hard-code the development phone number or OTP into production application logic.
+
+If Appwrite mock phone testing is unavailable, report the exact limitation before implementing any temporary development-only fallback.
+
+## Environment variables
+
+Frontend:
+
+```env
+VITE_APPWRITE_ENDPOINT=
+VITE_APPWRITE_PROJECT_ID=
+```
+
+Server only:
+
+```env
+APPWRITE_ENDPOINT=
+APPWRITE_PROJECT_ID=
+APPWRITE_API_KEY=
+```
+
+Never expose:
 
 ```text
-Full Name
-+ Date of Birth
-+ Mobile Number
-        ↓
-Firebase phone authentication
-        ↓
-Firebase reCAPTCHA verification
-        ↓
-SMS OTP sent
-        ↓
-User enters OTP
-        ↓
-Firebase verifies OTP
-        ↓
-Mandatory WebAuthn/passkey enrollment
-        ↓
-Account ready
+APPWRITE_API_KEY
 ```
 
-Use Firebase's official:
+to browser code.
 
-* `RecaptchaVerifier`
-* Phone authentication
-* OTP confirmation flow
-
-Do not:
-
-* Implement custom OTP logic
-* Hardcode OTP values
-* Store OTP values manually
-* Bypass Firebase app verification
-
-Ensure React does not create duplicate reCAPTCHA verifier instances.
-
----
-
-# Mandatory Device Security Enrollment
-
-After successful primary registration:
-
-Show a security screen or modal:
+Never create:
 
 ```text
-Secure your Mathreya account
+VITE_APPWRITE_API_KEY
 ```
 
-Then invoke the existing WebAuthn registration flow.
+Do not add Firebase environment variables.
 
-The device/browser determines the available authentication method.
+## Facial verification architecture requirement
 
-Examples:
+Mathreya requires actual facial verification.
 
-### PC / Laptop
+This is a dedicated face-verification system and is not:
 
+* WebAuthn
+* Passkeys
 * Windows Hello
-* Windows fingerprint
-* Windows face recognition
+* Face ID
 * Touch ID
-* Device PIN
-* Other supported passkey authenticators
+* Android fingerprint
+* Device PIN authentication
 
-### Mobile
+Do not implement facial verification as a simple browser image comparison.
 
-* Fingerprint
-* Face ID
-* Face Unlock
-* Device authentication
-* Device PIN/passcode
-* Other supported passkey authenticators
+Do not implement facial verification as a fake UI flow.
 
-Do not ask the user to upload a fingerprint or face.
+Do not begin provider integration until the provider/API architecture has been selected.
 
-Do not implement custom face recognition.
+## Future facial enrollment requirements
 
-The UI should explain:
+After primary identity creation and required Appwrite authentication:
 
-```text
-Your device securely handles fingerprint or face verification.
-Mathreya never receives your fingerprint or facial data.
-```
+1. Request camera permission.
+2. Capture a clear live face.
+3. Validate image quality.
+4. Detect a human face.
+5. Perform liveness/anti-spoofing checks where supported.
+6. Extract or securely obtain a protected facial reference.
+7. Associate the facial reference with `appwriteUserId`.
+8. Do not store the biometric reference in the normal user profile.
+9. Do not store biometric data in localStorage.
+10. Do not expose biometric templates to frontend code.
 
-If the preferred platform biometric is unavailable, provide:
+## Future facial login requirements
 
-```text
-Try other options
-```
-
-This must use browser/device-supported passkey alternatives.
-
----
-
-# Login Flow
-
-A successful Firebase authentication must NOT immediately redirect the user to Home.
-
-The required sequence is:
+The intended final authentication flow is:
 
 ```text
-Primary Authentication
+Email/Phone + Password or OTP
         ↓
-WebAuthn / Passkey Verification
+Primary Appwrite authentication
         ↓
-Final Mathreya Authentication
+No protected application access yet
         ↓
-Home
+Live facial verification
+        ↓
+Face match against enrolled reference
+        ↓
+Successful match
+        ↓
+Grant protected application access
 ```
 
----
+The face verification process must focus on facial identity characteristics rather than scene similarity.
 
-## Email Login
+Clothing and background changes must not be treated as identity changes.
+
+The provider/system should use facial verification or facial embeddings/templates rather than arbitrary image similarity.
+
+## Face mismatch behavior
+
+If face verification fails:
+
+1. Do not grant protected application access.
+2. Show a clear verification failure message.
+3. Allow retry.
+4. Do not expose raw face-match scores.
+5. Apply a configured retry limit.
+6. After retry failure, offer:
+
+   * Email OTP recovery, and/or
+   * Phone SMS OTP recovery.
+7. OTP recovery must use Appwrite.
+8. Do not overwrite the enrolled face reference automatically after OTP recovery.
+9. Record the event for future audit logging.
+
+## Biometric security rules
+
+Never:
+
+* Store raw fingerprint data.
+* Store biometric templates in localStorage.
+* Put biometric data into a public Appwrite bucket.
+* Store biometric templates in a normal user profile document.
+* Expose biometric templates to browser code.
+* Claim guaranteed fingerprint-only or face-only enforcement through device APIs.
+
+Raw facial captures must have minimal retention and be deleted when no longer required by the verification architecture.
+
+## User profile requirement
+
+Do not display the raw biometric enrollment reference in the profile.
+
+Instead display metadata such as:
 
 ```text
-Email
-+ Password
-        ↓
-Firebase Authentication succeeds
-        ↓
-DO NOT redirect to Home
-        ↓
-WebAuthn authentication challenge
-        ↓
-Fingerprint / Face / Windows Hello / Passkey
-        ↓
-WebAuthn verification succeeds
-        ↓
-Home
+Facial verification: Enrolled
+Enrollment date
+Last successful verification
 ```
 
-If WebAuthn fails or is cancelled:
+A normal profile image may exist independently and must not automatically be used as the biometric reference.
 
-* Do not redirect to Home.
-* Keep the user out of protected application areas.
-* Show a clear error.
-* Allow retry.
+## Required verification
 
----
+After Appwrite authentication changes:
 
-## Mobile Login
-
-```text
-Mobile Number
-        ↓
-Firebase Phone Authentication
-        ↓
-Firebase SMS OTP
-        ↓
-Firebase verifies OTP
-        ↓
-DO NOT redirect to Home
-        ↓
-WebAuthn authentication challenge
-        ↓
-Fingerprint / Face / Device Authentication / Passkey
-        ↓
-WebAuthn verification succeeds
-        ↓
-Home
-```
-
----
-
-# Important Device Behavior
-
-Do not create separate fake buttons for:
-
-* Face ID
-* Fingerprint
-* Windows Hello
-
-Use one WebAuthn/passkey request.
-
-The operating system or browser decides which authentication method to present.
-
-Expected examples:
-
-* Windows laptop → Windows Hello fingerprint or face
-* Windows desktop → Windows Hello or another supported authenticator
-* Android → fingerprint/face/device authentication
-* iPhone/iPad → Face ID or Touch ID
-* Compatible device without biometrics → device passcode/PIN or another passkey option
-
-Provide a visible:
-
-```text
-Try other options
-```
-
-fallback where appropriate.
-
----
-
-# Authentication State
-
-Update `AuthContext` so it represents these states:
-
-```text
-unauthenticated
-primary_authenticated
-awaiting_passkey
-authenticated
-recovering
-```
-
-The final Mathreya application session must only become:
-
-```text
-authenticated
-```
-
-after:
-
-1. Firebase primary authentication succeeds.
-2. WebAuthn authentication succeeds.
-
-Firebase `onAuthStateChanged` alone must NOT grant access to protected Mathreya routes.
-
----
-
-# Canonical Identity
-
-Firebase UID must be the canonical user identity.
-
-Identity relationship:
-
-```text
-Firebase User UID
-        ↓
-WebAuthn Credential(s)
-        ↓
-Future Appwrite User/Application Records
-```
-
-WebAuthn credentials must be associated with the Firebase UID.
-
-Do not create duplicate Appwrite users for the same person.
-
-Before database Phase 9, document the final identity mapping clearly.
-
-If the current WebAuthn implementation uses another identifier, migrate carefully to Firebase UID mapping.
-
-Do not destroy existing passkey data.
-
-If there are no real production users yet, document that assumption and use Firebase UID as the clean canonical identity.
-
----
-
-# Password Recovery
-
-Implement or preserve Firebase email/password recovery.
-
-Password recovery must not bypass required WebAuthn second-stage authentication when a passkey is enrolled and required.
-
----
-
-# UI Requirements
-
-Preserve the existing Mathreya design.
-
-Do not redesign unrelated pages.
-
-The flow should be understandable.
-
-## Registration
-
-```text
-Create Account
-        ↓
-Verify Email or Mobile
-        ↓
-Secure your Mathreya account
-        ↓
-Fingerprint / Face / Device Passkey
-        ↓
-Account Ready
-```
-
-## Login
-
-```text
-Email + Password
-        OR
-Mobile + OTP
-        ↓
-Primary identity verified
-        ↓
-Confirm identity on this device
-        ↓
-Fingerprint / Face / Windows Hello / Passkey
-        ↓
-Home
-```
-
----
-
-# Technical Requirements
-
-Use Firebase Authentication for:
-
-* Email/password authentication
-* Password recovery
-* Phone number authentication
-* Firebase SMS OTP
-
-Use existing SimpleWebAuthn/WebAuthn implementation for:
-
-* Passkey registration
-* Passkey authentication
-* Device biometric/passkey authentication
-
-Keep Appwrite for:
-
-* Backend application architecture
-* Future database
-* Future storage
-* Future application records
-
-Do not use Firebase Firestore for application healthcare data.
-
----
-
-# Required Dependency
-
-Install Firebase if it is not already installed:
-
-```bash
-npm install firebase
-```
-
-Do not add unnecessary authentication libraries.
-
----
-
-# Testing Requirements
-
-Before completion:
-
-1. Run:
-
-```bash
+```powershell
 npm run lint
-```
-
-2. Run:
-
-```bash
 npm run build
 ```
 
-3. Test email registration flow.
+Then manually test:
 
-4. Test email login flow.
+### Email/password
 
-5. Test phone OTP UI and Firebase integration.
+* Create account.
+* Sign in.
+* Sign out.
+* Sign in again.
 
-6. Verify successful primary authentication does not redirect directly to Home.
+### Email OTP
 
-7. Verify WebAuthn is triggered after successful primary authentication.
+* Request OTP.
+* Enter invalid OTP.
+* Verify error handling.
+* Request another OTP.
+* Verify valid OTP.
+* Confirm session creation.
 
-8. Verify Home access occurs only after successful WebAuthn verification.
+### Phone OTP
 
-9. Verify cancelling WebAuthn prevents Home access.
+* Configure Appwrite mock phone testing if available.
+* Request OTP.
+* Enter invalid OTP.
+* Verify error handling.
+* Enter the configured valid mock OTP.
+* Confirm Appwrite session creation.
 
----
+## Completion report
 
-# Completion Report
+Report:
 
-Report exactly:
-
-1. Files created.
-2. Files modified.
-3. Files deleted.
-4. Firebase flows implemented.
-5. Final registration flow.
-6. Final login flow.
-7. Firebase UID → WebAuthn → Appwrite identity mapping.
+1. Exact files changed.
+2. Exact Appwrite SDK methods used.
+3. Email/password test result.
+4. Email OTP test result.
+5. Mock phone OTP test result.
+6. Any Appwrite configuration blocker.
+7. Facial verification implementation status.
 8. `npm run lint` result.
 9. `npm run build` result.
-10. Any blockers.
 
-Stop after authentication integration.
+Stop after authentication stabilization.
 
-Do not start Phase 9 database work.
-    
+Do not start database creation.
+Do not implement a facial recognition provider yet.

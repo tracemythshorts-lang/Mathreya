@@ -4,7 +4,7 @@ import { UserProfile } from '../types';
 
 export type AuthStatus = 'unauthenticated' | 'authenticated' | 'recovering' | 'loading';
 
-interface PhoneTokenResult {
+interface TokenResult {
   userId: string;
 }
 
@@ -17,7 +17,9 @@ interface AuthContextType {
   // Actions
   signupWithEmail: (name: string, dob: string, email: string, pass: string, stage: string) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
-  sendPhoneOTP: (phone: string) => Promise<PhoneTokenResult>;
+  sendEmailOTP: (email: string) => Promise<TokenResult>;
+  verifyEmailOTP: (userId: string, otpCode: string, isRegistration?: boolean, name?: string, dob?: string, stage?: string) => Promise<void>;
+  sendPhoneOTP: (phone: string) => Promise<TokenResult>;
   verifyPhoneOTP: (userId: string, otpCode: string, isRegistration?: boolean, name?: string, dob?: string, stage?: string) => Promise<void>;
   logout: () => Promise<void>;
   sendPasswordRecovery: (email: string) => Promise<void>;
@@ -119,7 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 2. Appwrite Email Login
+  // 2. Appwrite Email Password Login
   const loginWithEmail = async (email: string, pass: string) => {
     try {
       setError(null);
@@ -166,8 +168,78 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 3. Appwrite Phone Token Creation
-  const sendPhoneOTP = async (phone: string): Promise<PhoneTokenResult> => {
+  // 3. Appwrite Email OTP Send
+  const sendEmailOTP = async (email: string): Promise<TokenResult> => {
+    try {
+      setError(null);
+      const token = await account.createEmailToken(ID.unique(), email);
+      return { userId: token.userId };
+    } catch (err: any) {
+      setError(err.message || 'Failed to send Email OTP.');
+      throw err;
+    }
+  };
+
+  // 4. Appwrite Email OTP Verify
+  const verifyEmailOTP = async (
+    userId: string,
+    otpCode: string,
+    isRegistration: boolean = false,
+    name: string = 'Mathreya Member',
+    dob?: string,
+    stage: string = 'pregnancy_prenatal'
+  ) => {
+    try {
+      setError(null);
+      setStatus('loading');
+
+      // Create session using Appwrite Email Token userId & OTP secret
+      await account.createSession(userId, otpCode);
+
+      const appwriteUser = await account.get();
+      setAppwriteUserId(appwriteUser.$id);
+
+      const userKey = appwriteUser.$id || userId;
+      let wasRegistered = false;
+      try {
+        if (isRegistration) {
+          localStorage.setItem(`mathreya_registered_${userKey}`, 'true');
+        } else {
+          wasRegistered = !!localStorage.getItem(`mathreya_registered_${userKey}`);
+          if (!wasRegistered) {
+            localStorage.setItem(`mathreya_registered_${userKey}`, 'true');
+          }
+        }
+      } catch {}
+
+      const savedPhoto = localStorage.getItem('mathreya_user_face_photo') || undefined;
+      const userProfile: UserProfile = {
+        name: appwriteUser.name || name,
+        email: appwriteUser.email || 'user@mathreya.care',
+        phone: appwriteUser.phone || '+91 98765 43210',
+        age: 26,
+        stage: (stage as any) || 'pregnancy_prenatal',
+        avatarUrl: savedPhoto,
+        faceAuthEnabled: false,
+        isAuthenticated: true,
+        isFirstLogin: isRegistration || !wasRegistered,
+        pregnancyWeek: 24,
+        emergencyContactName: 'Dr. Priya Sharma (Sister / OB-GYN)',
+        emergencyContactPhone: '+91 98111 22233',
+        location: 'Bengaluru, Karnataka',
+      };
+
+      setUser(userProfile);
+      setStatus('authenticated');
+    } catch (err: any) {
+      setError(err.message || 'Invalid or expired Email OTP code.');
+      setStatus('unauthenticated');
+      throw err;
+    }
+  };
+
+  // 5. Appwrite Phone Token Creation
+  const sendPhoneOTP = async (phone: string): Promise<TokenResult> => {
     try {
       setError(null);
       // Ensure phone is formatted with country code (e.g. +91...)
@@ -180,7 +252,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 4. Appwrite Phone Session Verification
+  // 6. Appwrite Phone Session Verification
   const verifyPhoneOTP = async (
     userId: string,
     otpCode: string,
@@ -232,13 +304,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(userProfile);
       setStatus('authenticated');
     } catch (err: any) {
-      setError(err.message || 'Invalid or expired OTP code on Appwrite.');
+      setError(err.message || 'Invalid or expired SMS OTP code.');
       setStatus('unauthenticated');
       throw err;
     }
   };
 
-  // 5. Appwrite Password Recovery
+  // 7. Appwrite Password Recovery
   const sendPasswordRecovery = async (email: string) => {
     try {
       setError(null);
@@ -250,7 +322,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 6. Sign Out
+  // 8. Sign Out
   const logout = async () => {
     try {
       await account.deleteSession('current');
@@ -276,6 +348,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         signupWithEmail,
         loginWithEmail,
+        sendEmailOTP,
+        verifyEmailOTP,
         sendPhoneOTP,
         verifyPhoneOTP,
         logout,

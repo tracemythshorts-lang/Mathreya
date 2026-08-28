@@ -2845,3 +2845,297 @@ optional Messaging
 ```
 
 This separation should guide every new implementation decision.
+
+## Authentication and Facial Verification Architecture Update
+
+Mathreya uses Appwrite as the sole authentication provider for the current authentication layer.
+
+Firebase authentication is not used.
+
+WebAuthn, passkeys, Windows Hello, Touch ID, Android fingerprint authentication, and platform biometric authenticators are not used.
+
+### Appwrite authentication methods
+
+The intended authentication methods are:
+
+* Email/Password
+* Email OTP
+* Phone OTP
+
+The canonical authenticated identity is:
+
+```text
+appwriteUserId = authenticated Appwrite account.$id
+```
+
+All future application database records must use `appwriteUserId` as the canonical user identity reference.
+
+Do not use email address or phone number as the primary relational identity key.
+
+### Authentication environment variables
+
+Frontend public variables:
+
+```env
+VITE_APPWRITE_ENDPOINT=https://sgp.cloud.appwrite.io/v1
+VITE_APPWRITE_PROJECT_ID=mathreya
+```
+
+Server-only variables:
+
+```env
+APPWRITE_ENDPOINT=https://sgp.cloud.appwrite.io/v1
+APPWRITE_PROJECT_ID=mathreya
+APPWRITE_API_KEY=
+```
+
+Never expose `APPWRITE_API_KEY` in frontend code or in a `VITE_*` environment variable.
+
+### Authentication UI terminology
+
+Do not expose Appwrite branding in user-facing authentication buttons.
+
+Use:
+
+* Create Account
+* Sign In
+* Send Email OTP
+* Send SMS OTP
+* Verify OTP
+* Resend OTP
+
+Do not use:
+
+* Create Appwrite Account
+* Sign In with Appwrite
+* Send Appwrite SMS OTP
+
+### Email registration and authentication
+
+Email registration flow:
+
+1. User enters Full Name.
+2. User enters Date of Birth.
+3. User enters Email.
+4. User enters Password.
+5. Appwrite account is created.
+6. Email verification/Email OTP is completed where required by the product flow.
+7. The user receives an authenticated Appwrite session only after the required authentication steps succeed.
+
+Email OTP flow:
+
+```text
+Enter Email
+→ Send Email OTP
+→ User receives OTP
+→ Enter OTP
+→ Verify OTP using Appwrite
+→ Create authenticated session
+```
+
+Do not generate custom email OTP values.
+
+Use the official Appwrite token and session flow.
+
+### Phone registration and authentication
+
+Phone authentication flow:
+
+```text
+Enter Phone Number
+→ Send SMS OTP
+→ User receives SMS OTP
+→ Enter OTP
+→ Verify OTP using Appwrite
+→ Create authenticated session
+```
+
+For development testing, use Appwrite Mock Phone Numbers when available.
+
+Do not permanently hard-code a phone number or OTP as a production authentication bypass.
+
+The development test phone number and OTP must be configured through the approved development/testing mechanism.
+
+### Real facial verification requirement
+
+Mathreya will use actual facial verification as an additional identity verification layer.
+
+This is not:
+
+* Windows Hello
+* Face ID
+* Touch ID
+* Android fingerprint
+* Device fingerprint authentication
+* WebAuthn
+* Passkeys
+
+The facial verification system must perform server-side or dedicated-service verification against a previously enrolled facial reference.
+
+### Facial registration flow
+
+During registration, after the primary Appwrite identity is created and the required email or phone verification succeeds:
+
+1. The user is required to enroll their face.
+2. The application requests permission to use the device camera.
+3. The user captures a clear live facial enrollment image or video sequence.
+4. The system performs basic image-quality validation.
+5. The system verifies that a detectable human face is present.
+6. The system performs liveness/anti-spoofing checks where supported.
+7. The facial verification service extracts a protected facial representation or biometric template.
+8. The protected facial representation is associated with `appwriteUserId`.
+9. The application must not store the raw facial image in the normal user profile record.
+10. Any temporary raw capture used for processing must be deleted as soon as it is no longer required by the verification architecture.
+
+The registration process must not be completed as fully authenticated until the required facial enrollment step succeeds or an approved recovery/admin process is used.
+
+### Facial login flow
+
+For standard sign-in:
+
+```text
+Email/Phone + Password or OTP
+        ↓
+Primary Appwrite authentication succeeds
+        ↓
+User is NOT yet granted final application access
+        ↓
+Live face verification is requested
+        ↓
+Camera capture and liveness checks
+        ↓
+Current facial representation compared with enrolled reference
+        ↓
+Face match succeeds
+        ↓
+Final application access is granted
+```
+
+The user must not be redirected to the protected home/dashboard immediately after primary authentication.
+
+Final application access requires successful facial verification unless the approved recovery flow is used.
+
+### Facial matching requirements
+
+The facial verification process must focus on facial identity features rather than:
+
+* clothing
+* background
+* room
+* lighting environment where reasonable tolerance is possible
+* hairstyle changes where reasonable tolerance is possible
+
+The system must not compare arbitrary full-scene image similarity.
+
+The implementation should use facial feature extraction or facial embeddings/template comparison through the dedicated facial verification system.
+
+The current login capture must be compared against the enrolled facial reference associated with the authenticated `appwriteUserId`.
+
+### Face mismatch behavior
+
+If facial verification fails:
+
+1. Do not grant protected application access.
+2. Display a clear message that facial verification could not confirm identity.
+3. Allow the user to retry face verification.
+4. Do not reveal sensitive face-match scores.
+5. After the configured retry limit, offer account recovery through OTP.
+6. The user may choose:
+
+   * Send Email OTP to the verified email address, or
+   * Send SMS OTP to the verified phone number where available.
+7. OTP recovery must use Appwrite's official authentication/token/session flow.
+8. Recovery must be rate-limited and protected against abuse.
+9. Successful OTP recovery must be logged as a recovery event.
+10. A successful OTP recovery must not silently replace or overwrite the enrolled facial reference.
+
+### Facial verification fallback and recovery
+
+The intended recovery flow is:
+
+```text
+Face verification fails
+        ↓
+Retry face verification
+        ↓
+Retry limit reached or user selects recovery
+        ↓
+Send Email OTP or SMS OTP
+        ↓
+Verify OTP
+        ↓
+Grant controlled authenticated access
+        ↓
+Optionally require facial re-enrollment through a separate secured flow
+```
+
+OTP fallback must be treated as account recovery or an approved alternate verification path.
+
+### Biometric data protection
+
+Facial biometric information is highly sensitive.
+
+Do not store:
+
+* raw fingerprint data
+* biometric templates in browser local storage
+* biometric templates in normal profile records
+* unprotected face embeddings
+* face images in public storage buckets
+
+The facial verification architecture must use:
+
+* restricted storage or a dedicated verification provider
+* strict server-side access controls
+* encryption/protected storage where supported
+* minimal retention of raw facial captures
+* protected association with `appwriteUserId`
+* audit logging for enrollment, verification failure, recovery, and re-enrollment
+
+### User profile display
+
+The normal user profile/dashboard must not expose the user's biometric template.
+
+If a profile needs to show facial verification status, show metadata such as:
+
+* Facial verification: Enrolled
+* Facial verification: Verified
+* Enrollment date
+* Last successful verification date
+
+A profile may display an approved user-selected profile image separately from the biometric reference.
+
+Do not automatically expose the raw biometric enrollment image as the user's profile picture.
+
+### Facial verification implementation status
+
+Facial verification is a required future authentication/security layer but must not be implemented as a fake browser-only image comparison.
+
+Before implementation, the selected facial verification provider or computer-vision architecture must support:
+
+* face detection
+* facial feature extraction
+* face comparison/verification
+* liveness or anti-spoofing where possible
+* secure server-side verification
+* association with `appwriteUserId`
+* secure deletion or minimal retention of temporary raw captures
+
+The provider/API selection and credentials must be documented before facial verification implementation begins.
+
+### Immediate development priority
+
+Before database creation:
+
+1. Verify Appwrite Email/Password authentication.
+2. Verify Appwrite Email OTP.
+3. Verify Appwrite Mock Phone OTP or document the exact phone testing limitation.
+4. Correct all authentication UI labels.
+5. Verify Appwrite session creation and route protection.
+6. Do not reintroduce Firebase.
+7. Do not reintroduce WebAuthn or passkeys.
+8. Do not implement facial recognition until the dedicated facial verification architecture and provider are selected.
+9. Run lint and production build.
+10. Commit and push verified authentication changes.
+
+After authentication is stable, proceed to database architecture and database creation.
