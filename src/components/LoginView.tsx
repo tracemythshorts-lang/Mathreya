@@ -29,9 +29,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     signupWithEmail,
     loginWithEmail,
     sendEmailOTP,
-    verifyEmailOTP,
-    sendPhoneOTP,
-    verifyPhoneOTP,
+    verifyEmailOTPOnly,
     sendPasswordRecovery,
     setUserPhotoUrl,
     error: authError,
@@ -41,11 +39,11 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('register');
 
   // Registration Form Fields
-  const [name, setName] = useState('Ananya Sharma');
-  const [dob, setDob] = useState('1998-05-14');
-  const [emailInput, setEmailInput] = useState('ananya.sharma@example.com');
-  const [phoneInput, setPhoneInput] = useState('+91 63624 48976');
-  const [password, setPassword] = useState('MathreyaSecret123!');
+  const [name, setName] = useState('');
+  const [dob, setDob] = useState('');
+  const [emailInput, setEmailInput] = useState('');
+  const [phoneInput, setPhoneInput] = useState('');
+  const [password, setPassword] = useState('');
   const [stage, setStage] = useState<'pregnancy_prenatal' | 'puberty' | 'husband'>('pregnancy_prenatal');
 
   // Email OTP States
@@ -55,12 +53,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [emailVerified, setEmailVerified] = useState(false);
   const [emailOtpLoading, setEmailOtpLoading] = useState(false);
 
-  // Phone OTP States (Optional)
-  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
-  const [phoneTokenUserId, setPhoneTokenUserId] = useState<string | null>(null);
-  const [phoneOtpCode, setPhoneOtpCode] = useState('');
-  const [phoneVerified, setPhoneVerified] = useState(false);
-  const [phoneOtpLoading, setPhoneOtpLoading] = useState(false);
+  // Email OTP token userId stored for later account creation (no phone OTP needed)
+  const [emailOtpVerifiedUserId, setEmailOtpVerifiedUserId] = useState<string | null>(null);
 
   // Recovery Modal State
   const [showRecoveryModal, setShowRecoveryModal] = useState(false);
@@ -72,7 +66,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   const [pendingUser, setPendingUser] = useState<Partial<UserProfile> | null>(null);
   const [securityMode, setSecurityMode] = useState<'face' | 'pin'>('face');
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
-  const [securityPin, setSecurityPin] = useState('1234');
+  const [securityPin, setSecurityPin] = useState('');
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
@@ -133,7 +127,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // 1. Handle Send Email OTP
+  // 1. Handle Send Email OTP (just generates the token, does NOT create account)
   const handleSendEmailOTP = async () => {
     if (!emailInput || !emailInput.includes('@')) {
       setLocalError('Please enter a valid email address first.');
@@ -153,7 +147,8 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // 2. Handle Validate Email OTP
+  // 2. Handle Validate Email OTP — only verifies the token, marks email as verified
+  // Account creation (with name/password/phone) happens later on form submit
   const handleValidateEmailOTP = async () => {
     if (!emailOtpCode || emailOtpCode.length < 4) {
       setLocalError('Please enter the valid OTP code sent to your email.');
@@ -163,53 +158,15 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
     setLocalError(null);
     try {
       if (!emailTokenUserId) throw new Error('OTP token expired. Please resend.');
-      await verifyEmailOTP(emailTokenUserId, emailOtpCode, true, name, dob, stage);
+      // Verify the token to confirm email ownership — no account created yet
+      await verifyEmailOTPOnly(emailTokenUserId, emailOtpCode);
+      setEmailOtpVerifiedUserId(emailTokenUserId);
       setEmailVerified(true);
       triggerHapticFeedback('success');
     } catch (err: any) {
       setLocalError(err.message || 'Invalid Email OTP code.');
     } finally {
       setEmailOtpLoading(false);
-    }
-  };
-
-  // 3. Handle Send Phone OTP (Optional)
-  const handleSendPhoneOTP = async () => {
-    if (!phoneInput || phoneInput.length < 8) {
-      setLocalError('Please enter a valid phone number.');
-      return;
-    }
-    setPhoneOtpLoading(true);
-    setLocalError(null);
-    try {
-      const tokenRes = await sendPhoneOTP(phoneInput);
-      setPhoneTokenUserId(tokenRes.userId);
-      setPhoneOtpSent(true);
-      triggerHapticFeedback('light');
-    } catch (err: any) {
-      setLocalError(err.message || 'Failed to send Phone OTP.');
-    } finally {
-      setPhoneOtpLoading(false);
-    }
-  };
-
-  // 4. Handle Validate Phone OTP (Optional)
-  const handleValidatePhoneOTP = async () => {
-    if (!phoneOtpCode || phoneOtpCode.length < 4) {
-      setLocalError('Please enter the OTP code sent to your mobile phone.');
-      return;
-    }
-    setPhoneOtpLoading(true);
-    setLocalError(null);
-    try {
-      if (!phoneTokenUserId) throw new Error('OTP token expired. Please resend.');
-      await verifyPhoneOTP(phoneTokenUserId, phoneOtpCode, true, name, dob, stage);
-      setPhoneVerified(true);
-      triggerHapticFeedback('success');
-    } catch (err: any) {
-      setLocalError(err.message || 'Invalid Phone OTP code.');
-    } finally {
-      setPhoneOtpLoading(false);
     }
   };
 
@@ -222,20 +179,16 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
 
     try {
       if (activeTab === 'register') {
-        // Appwrite Password Validation
-        if (!password || password.length < 8) {
-          throw new Error('Password must be at least 8 characters long as required by Appwrite security.');
-        }
+        // Validations
+        if (!name.trim()) throw new Error('Please enter your full name.');
+        if (!dob) throw new Error('Please enter your date of birth.');
+        if (!emailVerified) throw new Error('Please verify your email address with the OTP before creating your account.');
+        if (!phoneInput.trim()) throw new Error('Please enter your mobile phone number.');
+        if (!password || password.length < 8) throw new Error('Password must be at least 8 characters long.');
 
-        // Email OTP Validation check
-        if (!emailVerified) {
-          throw new Error('Please click "Send OTP" and validate your Email OTP before creating your account.');
-        }
+        // Create Appwrite account with full details (name, email, password, phone stored in prefs)
+        await signupWithEmail(name, dob, emailInput, password, stage, phoneInput);
 
-        // Primary Appwrite Registration
-        await signupWithEmail(name, dob, emailInput, password, stage);
-
-        // Set pending user and open security verification step
         const userObj: Partial<UserProfile> = {
           name,
           email: emailInput,
@@ -248,9 +201,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         startCamera();
       } else {
         // Sign In Flow (Email + Password)
-        if (!emailInput || !password) {
-          throw new Error('Please enter your registered email address and password.');
-        }
+        if (!emailInput || !password) throw new Error('Please enter your registered email address and password.');
         await loginWithEmail(emailInput, password);
 
         const userObj: Partial<UserProfile> = {
@@ -363,7 +314,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
         initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         onSubmit={handleFormSubmit}
-        className="w-full max-w-md mx-auto space-y-3.5 my-auto py-3"
+        className="w-full max-w-md mx-auto space-y-3.5 mt-2 mb-4"
       >
         {activeTab === 'register' ? (
           /* ========================================================================= */
@@ -476,72 +427,22 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
               )}
             </div>
 
-            {/* 4. PHONE NUMBER + OPTIONAL SEND OTP & VALIDATE */}
+            {/* 4. PHONE NUMBER (MANDATORY, NO OTP) */}
             <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-xs font-bold text-[#8B756A]">
-                  Mobile Phone Number <span className="text-stone-400 font-normal">(Optional)</span>
-                </label>
-                {phoneVerified && (
-                  <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Phone Verified
-                  </span>
-                )}
+              <label className="block text-xs font-bold text-[#8B756A] mb-1">
+                Mobile Phone Number <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="tel"
+                  required
+                  value={phoneInput}
+                  onChange={(e) => setPhoneInput(e.target.value)}
+                  className="w-full px-4 py-3 rounded-2xl bg-white border border-[#EADCD1] text-xs sm:text-sm text-[#4D2D22] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] font-medium shadow-2xs"
+                  placeholder="+91 98765 43210"
+                />
+                <Phone className="w-4 h-4 text-[#8B756A] absolute right-3.5 top-3.5" />
               </div>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    disabled={phoneVerified}
-                    value={phoneInput}
-                    onChange={(e) => setPhoneInput(e.target.value)}
-                    className="w-full px-4 py-3 rounded-2xl bg-white border border-[#EADCD1] text-xs sm:text-sm text-[#4D2D22] focus:outline-none focus:ring-2 focus:ring-[#B76A4B] font-medium shadow-2xs disabled:bg-stone-100"
-                    placeholder="+91 63624 48976"
-                  />
-                  <Phone className="w-4 h-4 text-[#8B756A] absolute right-3.5 top-3.5" />
-                </div>
-                {!phoneVerified && phoneInput.trim().length > 5 && (
-                  <button
-                    type="button"
-                    onClick={handleSendPhoneOTP}
-                    disabled={phoneOtpLoading}
-                    className="px-3.5 py-3 bg-[#F7EAE2] hover:bg-[#EADCD1] text-[#B76A4B] border border-[#EADCD1] text-xs font-bold rounded-2xl transition cursor-pointer shrink-0"
-                  >
-                    {phoneOtpLoading ? 'Sending...' : phoneOtpSent ? 'Resend' : 'Send OTP'}
-                  </button>
-                )}
-              </div>
-
-              {/* Phone OTP Text Box & Validate Button */}
-              {phoneOtpSent && !phoneVerified && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="mt-2 p-3 bg-amber-50/80 border border-amber-200 rounded-2xl space-y-2"
-                >
-                  <label className="block text-[11px] font-bold text-amber-900">
-                    Enter SMS OTP sent to {phoneInput}
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      maxLength={6}
-                      value={phoneOtpCode}
-                      onChange={(e) => setPhoneOtpCode(e.target.value)}
-                      className="flex-1 px-3 py-2 rounded-xl bg-white border border-amber-300 text-xs font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-[#B76A4B]"
-                      placeholder="123456"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleValidatePhoneOTP}
-                      disabled={phoneOtpLoading}
-                      className="px-4 py-2 bg-[#B76A4B] hover:bg-[#A05A3B] text-white text-xs font-bold rounded-xl transition cursor-pointer"
-                    >
-                      {phoneOtpLoading ? 'Validating...' : 'Validate OTP'}
-                    </button>
-                  </div>
-                </motion.div>
-              )}
             </div>
 
             {/* 5. PASSWORD (MANDATORY WITH APPWRITE VALIDATION) */}

@@ -15,12 +15,10 @@ interface AuthContextType {
   error: string | null;
 
   // Actions
-  signupWithEmail: (name: string, dob: string, email: string, pass: string, stage: string) => Promise<void>;
+  signupWithEmail: (name: string, dob: string, email: string, pass: string, stage: string, phone?: string) => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
   sendEmailOTP: (email: string) => Promise<TokenResult>;
-  verifyEmailOTP: (userId: string, otpCode: string, isRegistration?: boolean, name?: string, dob?: string, stage?: string) => Promise<void>;
-  sendPhoneOTP: (phone: string) => Promise<TokenResult>;
-  verifyPhoneOTP: (userId: string, otpCode: string, isRegistration?: boolean, name?: string, dob?: string, stage?: string) => Promise<void>;
+  verifyEmailOTPOnly: (userId: string, otpCode: string) => Promise<void>;
   logout: () => Promise<void>;
   sendPasswordRecovery: (email: string) => Promise<void>;
   setUserPhotoUrl: (photoUrl: string) => void;
@@ -73,13 +71,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     checkCurrentSession();
   }, []);
 
-  // 1. Appwrite Email Registration
-  const signupWithEmail = async (name: string, dob: string, email: string, pass: string, stage: string) => {
+  // 1. Appwrite Email Registration — creates account with name/email/password/phone
+  const signupWithEmail = async (name: string, dob: string, email: string, pass: string, stage: string, phone?: string) => {
     try {
       setError(null);
       setStatus('loading');
 
-      // Create Appwrite account
+      // If there's an active OTP session from email verification, log it out first
+      // so account.create() can work cleanly
+      try { await account.deleteSession('current'); } catch {}
+
+      // Create Appwrite account with name, email, password
       const userId = ID.unique();
       await account.create(userId, email, pass, name);
 
@@ -90,6 +92,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const appwriteUser = await account.get();
       setAppwriteUserId(appwriteUser.$id);
 
+      // Store phone and dob in Appwrite preferences
+      try {
+        await account.updatePrefs({
+          phone: phone || '',
+          dob: dob || '',
+          stage: stage || 'pregnancy_prenatal',
+        });
+      } catch {}
+
       try {
         localStorage.setItem(`mathreya_registered_${appwriteUser.$id}`, 'true');
         localStorage.setItem(`mathreya_registered_${email}`, 'true');
@@ -99,7 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const userProfile: UserProfile = {
         name: name || appwriteUser.name,
         email: email || appwriteUser.email,
-        phone: '+91 98765 43210',
+        phone: phone || '',
         age: 26,
         stage: (stage as any) || 'pregnancy_prenatal',
         avatarUrl: savedPhoto,
@@ -180,132 +191,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // 4. Appwrite Email OTP Verify
-  const verifyEmailOTP = async (
-    userId: string,
-    otpCode: string,
-    isRegistration: boolean = false,
-    name: string = 'Mathreya Member',
-    dob?: string,
-    stage: string = 'pregnancy_prenatal'
-  ) => {
+  // 4. Verify Email OTP token only — confirms email ownership without creating the account
+  // The OTP session created here is temporary; it gets deleted in signupWithEmail before account.create()
+  const verifyEmailOTPOnly = async (userId: string, otpCode: string) => {
     try {
       setError(null);
-      setStatus('loading');
-
-      // Create session using Appwrite Email Token userId & OTP secret
+      // Create a temporary session to verify the token
       await account.createSession(userId, otpCode);
-
-      const appwriteUser = await account.get();
-      setAppwriteUserId(appwriteUser.$id);
-
-      const userKey = appwriteUser.$id || userId;
-      let wasRegistered = false;
-      try {
-        if (isRegistration) {
-          localStorage.setItem(`mathreya_registered_${userKey}`, 'true');
-        } else {
-          wasRegistered = !!localStorage.getItem(`mathreya_registered_${userKey}`);
-          if (!wasRegistered) {
-            localStorage.setItem(`mathreya_registered_${userKey}`, 'true');
-          }
-        }
-      } catch {}
-
-      const savedPhoto = localStorage.getItem('mathreya_user_face_photo') || undefined;
-      const userProfile: UserProfile = {
-        name: appwriteUser.name || name,
-        email: appwriteUser.email || 'user@mathreya.care',
-        phone: appwriteUser.phone || '+91 98765 43210',
-        age: 26,
-        stage: (stage as any) || 'pregnancy_prenatal',
-        avatarUrl: savedPhoto,
-        faceAuthEnabled: false,
-        isAuthenticated: true,
-        isFirstLogin: isRegistration || !wasRegistered,
-        pregnancyWeek: 24,
-        emergencyContactName: 'Dr. Priya Sharma (Sister / OB-GYN)',
-        emergencyContactPhone: '+91 98111 22233',
-        location: 'Bengaluru, Karnataka',
-      };
-
-      setUser(userProfile);
-      setStatus('authenticated');
+      // Session will be cleared in signupWithEmail before account.create()
     } catch (err: any) {
       setError(err.message || 'Invalid or expired Email OTP code.');
-      setStatus('unauthenticated');
-      throw err;
-    }
-  };
-
-  // 5. Appwrite Phone Token Creation
-  const sendPhoneOTP = async (phone: string): Promise<TokenResult> => {
-    try {
-      setError(null);
-      // Ensure phone is formatted with country code (e.g. +91...)
-      const formattedPhone = phone.startsWith('+') ? phone : `+${phone.replace(/\D/g, '')}`;
-      const token = await account.createPhoneToken(ID.unique(), formattedPhone);
-      return { userId: token.userId };
-    } catch (err: any) {
-      setError(err.message || 'Failed to send SMS OTP via Appwrite Auth.');
-      throw err;
-    }
-  };
-
-  // 6. Appwrite Phone Session Verification
-  const verifyPhoneOTP = async (
-    userId: string,
-    otpCode: string,
-    isRegistration: boolean = false,
-    name: string = 'Mathreya Member',
-    dob?: string,
-    stage: string = 'pregnancy_prenatal'
-  ) => {
-    try {
-      setError(null);
-      setStatus('loading');
-
-      // Create session using Appwrite Phone Token userId & OTP secret
-      await account.createSession(userId, otpCode);
-
-      const appwriteUser = await account.get();
-      setAppwriteUserId(appwriteUser.$id);
-
-      const userKey = appwriteUser.$id || userId;
-      let wasRegistered = false;
-      try {
-        if (isRegistration) {
-          localStorage.setItem(`mathreya_registered_${userKey}`, 'true');
-        } else {
-          wasRegistered = !!localStorage.getItem(`mathreya_registered_${userKey}`);
-          if (!wasRegistered) {
-            localStorage.setItem(`mathreya_registered_${userKey}`, 'true');
-          }
-        }
-      } catch {}
-
-      const savedPhoto = localStorage.getItem('mathreya_user_face_photo') || undefined;
-      const userProfile: UserProfile = {
-        name: appwriteUser.name || name,
-        email: appwriteUser.email || 'user@mathreya.care',
-        phone: appwriteUser.phone || '+91 98765 43210',
-        age: 26,
-        stage: (stage as any) || 'pregnancy_prenatal',
-        avatarUrl: savedPhoto,
-        faceAuthEnabled: false,
-        isAuthenticated: true,
-        isFirstLogin: isRegistration || !wasRegistered,
-        pregnancyWeek: 24,
-        emergencyContactName: 'Dr. Priya Sharma (Sister / OB-GYN)',
-        emergencyContactPhone: '+91 98111 22233',
-        location: 'Bengaluru, Karnataka',
-      };
-
-      setUser(userProfile);
-      setStatus('authenticated');
-    } catch (err: any) {
-      setError(err.message || 'Invalid or expired SMS OTP code.');
-      setStatus('unauthenticated');
       throw err;
     }
   };
@@ -349,9 +244,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         signupWithEmail,
         loginWithEmail,
         sendEmailOTP,
-        verifyEmailOTP,
-        sendPhoneOTP,
-        verifyPhoneOTP,
+        verifyEmailOTPOnly,
         logout,
         sendPasswordRecovery,
         setUserPhotoUrl,
